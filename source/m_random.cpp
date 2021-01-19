@@ -30,12 +30,13 @@
 //-----------------------------------------------------------------------------
 
 #include "z_zone.h"
+#include "d_gi.h"
 #include "doomstat.h"
 #include "m_random.h"
 #include "a_small.h"
 
 #ifdef RANDOM_LOG
-void M_RandomLog(const char *format, ...)
+void M_RandomLog(E_FORMAT_STRING(const char *format), ...)
 {
    static FILE *f;
    if(!f)
@@ -46,6 +47,7 @@ void M_RandomLog(const char *format, ...)
      va_list ap;
      va_start(ap, format);
      vfprintf(f, format, ap);
+     va_end(ap);
      fflush(f);
    }
 }
@@ -187,6 +189,14 @@ int P_RangeRandom(pr_class_t pr_class, int min, int max)
 }
 
 //
+// Heretic demo compatibility switch
+//
+int M_VHereticPRandom(pr_class_t pr_class)
+{
+   return vanilla_heretic ? P_Random(pr_class) : M_Random();
+}
+
+//
 // P_RangeRandomEx
 //
 // haleyjd 03/16/09: as above, but works for large ranges.
@@ -203,7 +213,8 @@ unsigned int P_RangeRandomEx(pr_class_t pr_class,
 //
 int P_SubRandomEx(pr_class_t pr_class, unsigned max)
 {
-   int temp = P_RandomEx(pr_class) % max;
+   max++; // max has to be 1 more than the supplied arg to function as expected
+   const int temp = P_RandomEx(pr_class) % max;
    return temp - static_cast<int>(P_RandomEx(pr_class) % max);
 }
 
@@ -246,7 +257,7 @@ AMX_NATIVE_INFO random_Natives[] =
 {
    { "_P_Random", sm_random  },
    { "_M_Random", sm_mrandom },
-   { NULL, NULL }
+   { nullptr, nullptr }
 };
 #endif
 

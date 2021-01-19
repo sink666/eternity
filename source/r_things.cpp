@@ -96,7 +96,7 @@ int    lefthanded = 0;
 
 VALLOCATION(zeroarray)
 {
-   float *buffer = emalloctag(float *, w*2 * sizeof(float), PU_VALLOC, NULL);
+   float *buffer = emalloctag(float *, w*2 * sizeof(float), PU_VALLOC, nullptr);
    zeroarray = buffer;
    screenheightarray = buffer + w;
 
@@ -189,7 +189,7 @@ static float *portalbottom;
 
 VALLOCATION(portaltop)
 {
-   float *buf = emalloctag(float *, 2 * w * sizeof(*portaltop), PU_VALLOC, NULL);
+   float *buf = emalloctag(float *, 2 * w * sizeof(*portaltop), PU_VALLOC, nullptr);
 
    for(int i = 0; i < 2*w; i++)
       buf[i] = 0.0f;
@@ -209,7 +209,7 @@ static float *pscreenheightarray; // for psprites
 
 VALLOCATION(pscreenheightarray)
 {
-   pscreenheightarray = ecalloctag(float *, w, sizeof(float), PU_VALLOC, NULL);
+   pscreenheightarray = ecalloctag(float *, w, sizeof(float), PU_VALLOC, nullptr);
 }
 
 static lighttable_t **spritelights; // killough 1/25/98 made static
@@ -224,10 +224,10 @@ static vissprite_t *vissprites, **vissprite_ptrs;  // killough
 static size_t num_vissprite, num_vissprite_alloc, num_vissprite_ptrs;
 
 // SoM 12/13/03: the post-BSP stack
-static poststack_t   *pstack       = NULL;
+static poststack_t   *pstack       = nullptr;
 static int            pstacksize   = 0;
 static int            pstackmax    = 0;
-static maskedrange_t *unusedmasked = NULL;
+static maskedrange_t *unusedmasked = nullptr;
 
 // MaxW: 2018/07/01: Whether or not to draw psprites
 static bool r_drawplayersprites = true;
@@ -260,10 +260,10 @@ VALLOCATION(pstack)
       mr = next;
    }
 
-   pstack       = NULL;
+   pstack       = nullptr;
    pstacksize   = 0;
    pstackmax    = 0;
-   unusedmasked = NULL;
+   unusedmasked = nullptr;
 }
 
 // haleyjd: made static global
@@ -272,7 +272,7 @@ static float *cliptop;
 
 VALLOCATION(clipbot)
 {
-   float *buffer = ecalloctag(float *, w*2, sizeof(float), PU_VALLOC, NULL);
+   float *buffer = ecalloctag(float *, w*2, sizeof(float), PU_VALLOC, nullptr);
    clipbot = buffer;
    cliptop = buffer + w;
 }
@@ -467,8 +467,6 @@ static void R_InitSpriteDefs(char **namelist)
                {
                case -1:
                   // no rotations were found for that frame at all
-                  I_Error("R_InitSprites: No patches found for %.8s frame %c\n", 
-                          namelist[i], frame + 'A');
                   break;
                   
                case 0:
@@ -499,11 +497,11 @@ static void R_InitSpriteDefs(char **namelist)
          // If j was -1 above, meaning that there are no lumps for the sprite
          // present, the sprite is left uninitialized. This creates major 
          // problems in R_PrecacheLevel if a thing tries to subsequently use
-         // that sprite. Instead, set numframes to 0 and spriteframes to NULL.
+         // that sprite. Instead, set numframes to 0 and spriteframes to nullptr.
          // Then, check for these values before loading any sprite.
          
          sprites[i].numframes = 0;
-         sprites[i].spriteframes = NULL;
+         sprites[i].spriteframes = nullptr;
       }
    }
    efree(hash);             // free hash table
@@ -569,7 +567,7 @@ void R_PushPost(bool pushmasked, pwindow_t *window)
          post->masked = unusedmasked;
          unusedmasked = unusedmasked->next;
 
-         post->masked->next = NULL;
+         post->masked->next = nullptr;
          post->masked->firstds = post->masked->lastds =
             post->masked->firstsprite = post->masked->lastsprite = 0;
       }
@@ -603,7 +601,7 @@ void R_PushPost(bool pushmasked, pwindow_t *window)
       memcpy(post->masked->floorclip,   portalbottom, sizeof(*portalbottom) * video.width);
    }
    else
-      post->masked = NULL;
+      post->masked = nullptr;
 
    pstacksize++;
 }
@@ -625,23 +623,24 @@ static vissprite_t *R_NewVisSprite()
 }
 
 //
-// R_DrawMaskedColumn
-//
 // Used for sprites and masked mid textures.
 // Masked means: partly transparent, i.e. stored
 //  in posts/runs of opaque pixels.
 //
-static void R_DrawMaskedColumn(column_t *tcolumn)
+static void R_drawMaskedColumn(column_t *tcolumn)
 {
    float y1, y2;
    fixed_t basetexturemid = column.texmid;
    
    column.texheight = 0; // killough 11/98
 
+   int top = 0;
    while(tcolumn->topdelta != 0xff)
    {
+      top = tcolumn->topdelta <= top ? tcolumn->topdelta + top : tcolumn->topdelta;
+
       // calculate unclipped screen coordinates for post
-      y1 = maskedcolumn.ytop + (maskedcolumn.scale * tcolumn->topdelta);
+      y1 = maskedcolumn.ytop + (maskedcolumn.scale * top);
       y2 = y1 + (maskedcolumn.scale * tcolumn->length) - 1;
 
       column.y1 = (int)(y1 < mceilingclip[column.x] ? mceilingclip[column.x] : y1);
@@ -651,7 +650,7 @@ static void R_DrawMaskedColumn(column_t *tcolumn)
       if(column.y1 <= column.y2 && column.y2 < viewwindow.height)
       {
          column.source = (byte *)tcolumn + 3;
-         column.texmid = basetexturemid - (tcolumn->topdelta << FRACBITS);
+         column.texmid = basetexturemid - (top << FRACBITS);
 
          colfunc();
       }
@@ -665,14 +664,14 @@ static void R_DrawMaskedColumn(column_t *tcolumn)
 //
 // R_DrawNewMaskedColumn
 //
-void R_DrawNewMaskedColumn(texture_t *tex, texcol_t *tcol)
+void R_DrawNewMaskedColumn(const texture_t *const tex, const texcol_t *tcol)
 {
    float y1, y2;
    fixed_t basetexturemid = column.texmid;
    
    column.texheight = 0; // killough 11/98
 
-   const byte *texend = tex->bufferdata + tex->width * tex->height + 1;
+   const byte *const texend = tex->bufferdata + tex->width * tex->height + 1;
 
    while(tcol)
    {
@@ -690,8 +689,8 @@ void R_DrawNewMaskedColumn(texture_t *tex, texcol_t *tcol)
          column.source = localstart;
          column.texmid = basetexturemid - (tcol->yoff << FRACBITS);
 
-         byte *last = localstart + tcol->len;
-         byte orig;
+         byte *const last = localstart + tcol->len;
+         byte orig = 0;
          if(last < texend && last > tex->bufferdata)
          {
             orig = *last;
@@ -797,7 +796,7 @@ static void R_DrawVisSprite(vissprite_t *vis, int x1, int x2)
             continue;
          
          tcolumn = (column_t *)((byte *) patch + patch->columnofs[texturecolumn]);
-         R_DrawMaskedColumn(tcolumn);
+         R_drawMaskedColumn(tcolumn);
       }
    }
    else
@@ -811,7 +810,7 @@ static void R_DrawVisSprite(vissprite_t *vis, int x1, int x2)
             continue;
          
          tcolumn = (column_t *)((byte *) patch + patch->columnofs[texturecolumn]);
-         R_DrawMaskedColumn(tcolumn);
+         R_drawMaskedColumn(tcolumn);
       }
    }
    colfunc = r_column_engine->DrawColumn; // killough 3/14/98
@@ -836,12 +835,9 @@ static void R_interpolateThingPosition(Mobj *thing, spritepos_t &pos)
       const linkdata_t *ldata;
       if((ldata = thing->prevpos.ldata))
       {
-         pos.x = lerpCoord(view.lerp, thing->prevpos.x + ldata->deltax,
-                           thing->x);
-         pos.y = lerpCoord(view.lerp, thing->prevpos.y + ldata->deltay,
-                           thing->y);
-         pos.z = lerpCoord(view.lerp, thing->prevpos.z + ldata->deltaz,
-                           thing->z);
+         pos.x = lerpCoord(view.lerp, thing->prevpos.x + ldata->delta.x, thing->x);
+         pos.y = lerpCoord(view.lerp, thing->prevpos.y + ldata->delta.y, thing->y);
+         pos.z = lerpCoord(view.lerp, thing->prevpos.z + ldata->delta.z, thing->z);
       }
       else
       {
@@ -921,8 +917,7 @@ static void R_ProjectSprite(Mobj *thing, v3fixed_t *delta = nullptr,
 
    // ioanch 20160125: reject sprites in front of portal line when rendering
    // line portal
-   if(portalrender.w && portalrender.w->portal &&
-      portalrender.w->portal->type != R_SKYBOX)
+   if(portalrender.active && portalrender.w->portal->type != R_SKYBOX)
    {
       v2fixed_t offsetpos = { thing->x, thing->y };
       if(delta)
@@ -930,21 +925,29 @@ static void R_ProjectSprite(Mobj *thing, v3fixed_t *delta = nullptr,
          offsetpos.x += delta->x;
          offsetpos.y += delta->y;
       }
+      v2float_t posf = v2float_t::fromFixed(offsetpos);
+
       const renderbarrier_t &barrier = portalrender.w->barrier;
-      if(portalrender.w->line && portalrender.w->line != portalline &&
-         P_PointOnDivlineSide(offsetpos.x, offsetpos.y, &barrier.dln.dl) == 0)
+      if(portalrender.w->type == pw_line && portalrender.w->line != portalline &&
+         barrier.linegen.normal * (posf - barrier.linegen.start) >= 0)
       {
          return;
       }
-      if(!portalrender.w->line)
+      if(portalrender.w->type != pw_line)
       {
-         dlnormal_t dl1, dl2;
-         if(R_PickNearestBoxLines(barrier.bbox, dl1, dl2) &&
-            (P_PointOnDivlineSide(offsetpos.x, offsetpos.y, &dl1.dl) == 0 ||
-               (dl2.dl.x != D_MAXINT && 
-                  P_PointOnDivlineSide(offsetpos.x, offsetpos.y, &dl2.dl) == 0)))
+         if(portalrender.w->line && portalrender.w->line != portalline &&
+            barrier.linegen.normal * (posf - barrier.linegen.start) >= 0)
          {
             return;
+         }
+         windowlinegen_t linegen1, linegen2;
+         if(R_PickNearestBoxLines(barrier.fbox, linegen1, linegen2))
+         {
+
+            if(linegen1.normal * (posf - linegen1.start) >= 0)
+               return;
+            if(linegen2.normal && linegen2.normal * (posf - linegen2.start) >= 0)
+               return;
          }
       }
    }
@@ -955,7 +958,7 @@ static void R_ProjectSprite(Mobj *thing, v3fixed_t *delta = nullptr,
    if((unsigned int)thing->sprite >= (unsigned int)numsprites)
    {
       // haleyjd 08/12/02: modified error handling
-      doom_printf(FC_ERROR "Bad sprite number %i\n", thing->sprite);
+      doom_printf(FC_ERROR "Bad sprite number %i for thingtype %s\n", thing->sprite, thing->info->name);
 
       // blank the thing's state sprite and frame so that this error does not
       // occur perpetually, flooding the message widget and console.
@@ -972,7 +975,8 @@ static void R_ProjectSprite(Mobj *thing, v3fixed_t *delta = nullptr,
    sprdef = &sprites[thing->sprite];
    
    if(((thing->frame&FF_FRAMEMASK) >= sprdef->numframes) ||
-      !(sprdef->spriteframes))
+      !(sprdef->spriteframes) ||
+      sprdef->spriteframes[thing->frame & FF_FRAMEMASK].rotate == -1)
    {
       // haleyjd 08/12/02: modified error handling
       doom_printf(FC_ERROR "Bad frame %i for sprite %s",
@@ -1057,27 +1061,27 @@ static void R_ProjectSprite(Mobj *thing, v3fixed_t *delta = nullptr,
    sec = (view.lerp == FRACUNIT && !delta ? thing->subsector->sector :
           R_PointInSubsector(spritepos.x, spritepos.y)->sector);
    heightsec = sec->heightsec;
-   
+
    if(heightsec != -1) // only clip things which are in special sectors
    {
       auto &hsec = sectors[heightsec];
       int   phs  = view.sector->heightsec;
-      
-      if(phs != -1 && viewz < sectors[phs].floorheight ?
-         thing->z >= hsec.floorheight : gzt < hsec.floorheight)
+
+      if(phs != -1 && viewz < sectors[phs].srf.floor.height ?
+         thing->z >= hsec.srf.floor.height : gzt < hsec.srf.floor.height)
          return;
-      if(phs != -1 && viewz > sectors[phs].ceilingheight ?
-         gzt < hsec.ceilingheight && viewz >= hsec.ceilingheight :
-         thing->z >= hsec.ceilingheight)
+      if(phs != -1 && viewz > sectors[phs].srf.ceiling.height ?
+         gzt < hsec.srf.ceiling.height && viewz >= hsec.srf.ceiling.height :
+         thing->z >= hsec.srf.ceiling.height)
          return;
    }
 
    // store information in a vissprite
    vis = R_NewVisSprite();
-   
-   // killough 3/27/98: save sector for special clipping later   
+
+   // killough 3/27/98: save sector for special clipping later
    vis->heightsec = heightsec;
-   
+
    vis->colour = thing->colour;
    vis->gx     = spritepos.x;
    vis->gy     = spritepos.y;
@@ -1690,12 +1694,12 @@ static void R_DrawSpriteInDSRange(vissprite_t *spr, int firstds, int lastds)
       
       int phs = view.sector->heightsec;
 
-      mh = M_FixedToFloat(sectors[spr->heightsec].floorheight) - view.z;
-      if(sectors[spr->heightsec].floorheight > spr->gz &&
+      mh = M_FixedToFloat(sectors[spr->heightsec].srf.floor.height) - view.z;
+      if(sectors[spr->heightsec].srf.floor.height > spr->gz &&
          (h = view.ycenter - (mh * spr->scale)) >= 0.0f &&
          (h < view.height))
       {
-         if(mh <= 0.0 || (phs != -1 && viewz > sectors[phs].floorheight))
+         if(mh <= 0.0 || (phs != -1 && viewz > sectors[phs].srf.floor.height))
          {
             // clip bottom
             for(x = spr->x1; x <= spr->x2; x++)
@@ -1706,7 +1710,7 @@ static void R_DrawSpriteInDSRange(vissprite_t *spr, int firstds, int lastds)
          }
          else  // clip top
          {
-            if(phs != -1 && viewz <= sectors[phs].floorheight) // killough 11/98
+            if(phs != -1 && viewz <= sectors[phs].srf.floor.height) // killough 11/98
             {
                for(x = spr->x1; x <= spr->x2; x++)
                {
@@ -1717,12 +1721,12 @@ static void R_DrawSpriteInDSRange(vissprite_t *spr, int firstds, int lastds)
          }
       }
 
-      mh = M_FixedToFloat(sectors[spr->heightsec].ceilingheight) - view.z;
-      if(sectors[spr->heightsec].ceilingheight < spr->gzt &&
+      mh = M_FixedToFloat(sectors[spr->heightsec].srf.ceiling.height) - view.z;
+      if(sectors[spr->heightsec].srf.ceiling.height < spr->gzt &&
          (h = view.ycenter - (mh * spr->scale)) >= 0.0f &&
          (h < view.height))
       {
-         if(phs != -1 && viewz >= sectors[phs].ceilingheight)
+         if(phs != -1 && viewz >= sectors[phs].srf.ceiling.height)
          {
             // clip bottom
             for(x = spr->x1; x <= spr->x2; x++)
@@ -1750,8 +1754,8 @@ static void R_DrawSpriteInDSRange(vissprite_t *spr, int firstds, int lastds)
 
       sector_t *sector = sectors + spr->sector;
 
-      mh = M_FixedToFloat(sector->floorheight) - view.z;
-      if(sector->f_pflags & PS_PASSABLE && sector->floorheight > spr->gz)
+      mh = M_FixedToFloat(sector->srf.floor.height) - view.z;
+      if(sector->srf.floor.pflags & PS_PASSABLE && sector->srf.floor.height > spr->gz)
       {
          h = eclamp(view.ycenter - (mh * spr->scale), 0.0f, view.height - 1);
 
@@ -1762,8 +1766,8 @@ static void R_DrawSpriteInDSRange(vissprite_t *spr, int firstds, int lastds)
          }
       }
 
-      mh = M_FixedToFloat(sector->ceilingheight) - view.z;
-      if(sector->c_pflags & PS_PASSABLE && sector->ceilingheight < spr->gzt)
+      mh = M_FixedToFloat(sector->srf.ceiling.height) - view.z;
+      if(sector->srf.ceiling.pflags & PS_PASSABLE && sector->srf.ceiling.height < spr->gzt)
       {
          h = eclamp(view.ycenter - (mh * spr->scale), 0.0f, view.height - 1);
 
@@ -1844,8 +1848,8 @@ void R_DrawPostBSP()
                      drawsegs_xrange_count++;
                   }
                }
-               // haleyjd: terminate with a NULL user for faster loop - adds ~3 FPS
-               drawsegs_xrange[drawsegs_xrange_count].user = NULL;
+               // haleyjd: terminate with a nullptr user for faster loop - adds ~3 FPS
+               drawsegs_xrange[drawsegs_xrange_count].user = nullptr;
             }
 
             ptop    = masked->ceilingclip;
@@ -1868,11 +1872,11 @@ void R_DrawPostBSP()
          }
          
          // Done with the masked range
-         pstack[pstacksize].masked = NULL;
+         pstack[pstacksize].masked = nullptr;
          masked->next = unusedmasked;
          unusedmasked = masked;
          
-         masked = NULL;
+         masked = nullptr;
       }       
       
       if(pstack[pstacksize].overlay)
@@ -1953,17 +1957,13 @@ static spriteprojnode_t *R_newProjNode()
 //
 // Helper function for below. Returns the next sector
 //
-inline static sector_t *R_addProjNode(Mobj *mobj, const linkdata_t *data,
-                                      v3fixed_t &delta,
+inline static sector_t *R_addProjNode(Mobj *mobj, const linkdata_t *data, v3fixed_t &delta,
                                       DLListItem<spriteprojnode_t> *&item,
-                                      DLListItem<spriteprojnode_t> **&tail,
-                                      const line_t *line)
+                                      DLListItem<spriteprojnode_t> **&tail, const line_t *line)
 {
    sector_t *sector;
 
-   delta.x += data->deltax;
-   delta.y += data->deltay;
-   delta.z += data->deltaz;
+   delta += data->delta;
    sector = R_PointInSubsector(mobj->x + delta.x, mobj->y + delta.y)->sector;
    if(!item)
    {
@@ -2017,7 +2017,7 @@ static bool RIT_checkMobjProjection(const line_t &line, void *vdata)
       line.bbox[BOXBOTTOM] >= mpi.bbox[BOXTOP] ||
       line.bbox[BOXRIGHT] <= mpi.bbox[BOXLEFT] ||
       line.bbox[BOXTOP] <= mpi.bbox[BOXBOTTOM] ||
-      P_PointOnLineSide(mpi.mobj->x, mpi.mobj->y, &line) == 1 ||
+      P_PointOnLineSidePrecise(mpi.mobj->x, mpi.mobj->y, &line) == 1 ||
       P_BoxOnLineSide(mpi.bbox, &line) != -1 ||
       line.intflags & MLI_MOVINGPORTAL)
    {
@@ -2031,16 +2031,16 @@ static bool RIT_checkMobjProjection(const line_t &line, void *vdata)
    else
    {
       if(line.extflags & EX_ML_LOWERPORTAL &&
-         line.backsector->f_pflags & PS_PASSABLE &&
-         mpi.mobj->z + mpi.scaledbottom < line.backsector->floorheight)
+         line.backsector->srf.floor.pflags & PS_PASSABLE &&
+         mpi.mobj->z + mpi.scaledbottom < line.backsector->srf.floor.height)
       {
-         data = &line.backsector->f_portal->data.link;
+         data = &line.backsector->srf.floor.portal->data.link;
       }
       if(line.extflags & EX_ML_UPPERPORTAL &&
-         line.backsector->c_pflags & PS_PASSABLE &&
-         mpi.mobj->z + mpi.scaledtop > line.backsector->ceilingheight)
+         line.backsector->srf.ceiling.pflags & PS_PASSABLE &&
+         mpi.mobj->z + mpi.scaledtop > line.backsector->srf.ceiling.height)
       {
-         data2 = &line.backsector->c_portal->data.link;
+         data2 = &line.backsector->srf.ceiling.portal->data.link;
       }
    }
    v3fixed_t v = { 0, 0, 0 };
@@ -2069,7 +2069,7 @@ void R_CheckMobjProjections(Mobj *mobj, bool checklines)
    DLListItem<spriteprojnode_t> *item = mobj->spriteproj;
 
    if(mobj->flags & MF_NOSECTOR || overflown ||
-      (!(sector->f_pflags & PS_PASSABLE) && !(sector->c_pflags & PS_PASSABLE) &&
+      (!(sector->srf.floor.pflags & PS_PASSABLE) && !(sector->srf.ceiling.pflags & PS_PASSABLE) &&
        !checklines))
    {
       if(item)
@@ -2090,8 +2090,8 @@ void R_CheckMobjProjections(Mobj *mobj, bool checklines)
    v3fixed_t delta = {0, 0, 0};
    int loopprot = 0;
    while(++loopprot < SECTOR_PORTAL_LOOP_PROTECTION && sector &&
-         sector->f_pflags & PS_PASSABLE &&
-         P_FloorPortalZ(*sector) > emin(mobj->z, mobj->prevpos.z) + scaledbottom)
+         sector->srf.floor.pflags & PS_PASSABLE &&
+         P_PortalZ(surf_floor, *sector) > emin(mobj->z, mobj->prevpos.z) + scaledbottom)
    {
       // always accept first sector
       data = R_FPLink(sector);
@@ -2102,8 +2102,8 @@ void R_CheckMobjProjections(Mobj *mobj, bool checklines)
    sector = mobj->subsector->sector;
    delta.x = delta.y = delta.z = 0;
    while(++loopprot < SECTOR_PORTAL_LOOP_PROTECTION && sector &&
-         sector->c_pflags & PS_PASSABLE &&
-         P_CeilingPortalZ(*sector) < emax(mobj->z, mobj->prevpos.z) + scaledtop)
+         sector->srf.ceiling.pflags & PS_PASSABLE &&
+         P_PortalZ(surf_ceil, *sector) < emax(mobj->z, mobj->prevpos.z) + scaledtop)
    {
       // always accept first sector
       data = R_CPLink(sector);
@@ -2168,11 +2168,11 @@ void R_CheckMobjProjections(Mobj *mobj, bool checklines)
 // newParticle
 //
 // Tries to find an inactive particle in the Particles list
-// Returns NULL on failure
+// Returns nullptr on failure
 //
 particle_t *newParticle()
 {
-   particle_t *result = NULL;
+   particle_t *result = nullptr;
    if(inactiveParticles != -1)
    {
       result = Particles + inactiveParticles;
@@ -2203,7 +2203,7 @@ void R_InitParticles()
    else if(numParticles < 100)
       numParticles = 100;
    
-   Particles = (particle_t *)(Z_Malloc(numParticles*sizeof(particle_t), PU_STATIC, NULL));
+   Particles = emalloctag(particle_t *, numParticles*sizeof(particle_t), PU_STATIC, nullptr);
    R_ClearParticles();
 }
 
@@ -2232,7 +2232,7 @@ static void R_ProjectParticle(particle_t *particle)
    fixed_t gzt;
    int x1, x2;
    vissprite_t *vis;
-   sector_t    *sector = NULL;
+   sector_t    *sector = nullptr;
    int heightsec = -1;
    
    float tempx, tempy, ty1, tx1, tx2, tz;
@@ -2259,13 +2259,13 @@ static void R_ProjectParticle(particle_t *particle)
    idist = 1.0f / ty1;
    xscale = idist * view.xfoc;
    yscale = idist * view.yfoc;
-   
+
    // calculate edges of the shape
    x1 = (int)(view.xcenter + (tx1 * xscale));
    x2 = (int)(view.xcenter + (tx2 * xscale));
 
    if(x2 < x1) x2 = x1;
-   
+
    // off either side?
    if(x1 >= viewwindow.width || x2 < 0)
       return;
@@ -2274,46 +2274,46 @@ static void R_ProjectParticle(particle_t *particle)
 
    y1 = (view.ycenter - (tz * yscale));
    y2 = (view.ycenter - ((tz - 1.0f) * yscale));
-   
+
    if(y2 < 0.0f || y1 >= view.height)
       return;
-   
+
    gzt = particle->z + 1;
-   
+
    // killough 3/27/98: exclude things totally separated
    // from the viewer, by either water or fake ceilings
    // killough 4/11/98: improve sprite clipping for underwater/fake ceilings
-   
+
    {
       // haleyjd 02/20/04: use subsector now stored in particle
       subsector_t *subsector = particle->subsector;
       sector = subsector->sector;
       heightsec = sector->heightsec;
 
-      if(particle->z < sector->floorheight || 
-	 particle->z > sector->ceilingheight)
+      if(particle->z < sector->srf.floor.height ||
+	 particle->z > sector->srf.ceiling.height)
 	 return;
    }
-   
+
    // only clip particles which are in special sectors
    if(heightsec != -1)
    {
       int phs = view.sector->heightsec;
-      
-      if(phs != -1 && 
-	 viewz < sectors[phs].floorheight ?
-	 particle->z >= sectors[heightsec].floorheight :
-         gzt < sectors[heightsec].floorheight)
+
+      if(phs != -1 &&
+	 viewz < sectors[phs].srf.floor.height ?
+	 particle->z >= sectors[heightsec].srf.floor.height :
+         gzt < sectors[heightsec].srf.floor.height)
          return;
 
-      if(phs != -1 && 
-	 viewz > sectors[phs].ceilingheight ?
-	 gzt < sectors[heightsec].ceilingheight &&
-	 viewz >= sectors[heightsec].ceilingheight :
-         particle->z >= sectors[heightsec].ceilingheight)
+      if(phs != -1 &&
+	 viewz > sectors[phs].srf.ceiling.height ?
+	 gzt < sectors[heightsec].srf.ceiling.height &&
+	 viewz >= sectors[heightsec].srf.ceiling.height :
+         particle->z >= sectors[heightsec].srf.ceiling.height)
          return;
    }
-   
+
    // store information in a vissprite
    vis = R_NewVisSprite();
    vis->heightsec = heightsec;
@@ -2425,7 +2425,7 @@ static void R_DrawParticle(vissprite_t *vis)
          return;
       ++ycount;
 
-      spacing = video.pitch - xcount;
+      spacing = video.pitch - ycount;
       dest    = R_ADDRESS(x1, yl);
 
       // haleyjd 02/08/05: rewritten to remove inner loop invariants
@@ -2444,7 +2444,7 @@ static void R_DrawParticle(vissprite_t *vis)
 
          do // step in y
          {
-            int count = xcount;
+            int count = ycount;
 
             do // step in x
             {
@@ -2455,20 +2455,20 @@ static void R_DrawParticle(vissprite_t *vis)
             while(--count);
             dest += spacing;  // go to next row
          } 
-         while(--ycount);
+         while(--xcount);
       }
       else // opaque (fast, and looks terrible)
       {
          do // step in y
          {
-            int count = xcount;
+            int count = ycount;
             
             do // step in x
                *dest++ = color;
             while(--count);
             dest += spacing;  // go to next row
          } 
-         while(--ycount);
+         while(--xcount);
       } // end else [!general_translucency]
    } // end local block
 }
@@ -2478,7 +2478,7 @@ static void R_DrawParticle(vissprite_t *vis)
 // Console Commands
 //
 
-VARIABLE_TOGGLE(r_drawplayersprites, NULL, onoff);
+VARIABLE_TOGGLE(r_drawplayersprites, nullptr, onoff);
 CONSOLE_VARIABLE(r_drawplayersprites, r_drawplayersprites, 0) {}
 
 //----------------------------------------------------------------------------

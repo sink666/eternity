@@ -46,11 +46,11 @@
 #include "p_chase.h"
 #include "p_info.h"
 #include "p_partcl.h"
+#include "p_portal.h"
 #include "p_scroll.h"
 #include "p_xenemy.h"
 #include "r_bsp.h"
 #include "r_draw.h"
-#include "r_drawq.h"
 #include "r_dynseg.h"
 #include "r_interpolate.h"
 #include "r_main.h"
@@ -126,7 +126,7 @@ int viewangletox[FINEANGLES/2];
 angle_t *xtoviewangle;   // killough 2/8/98
 VALLOCATION(xtoviewangle)
 {
-   xtoviewangle = ecalloctag(angle_t *, w+1, sizeof(angle_t), PU_VALLOC, NULL);
+   xtoviewangle = ecalloctag(angle_t *, w+1, sizeof(angle_t), PU_VALLOC, nullptr);
 }
 
 
@@ -154,7 +154,7 @@ int r_column_engine_num;
 static columndrawer_t *r_column_engines[NUMCOLUMNENGINES] =
 {
    &r_normal_drawer, // normal engine
-   &r_quad_drawer,   // quad cache engine
+   // Here lies Quad Cache Engine: 2006/09/04 - 2020/10/31
 };
 
 //
@@ -391,8 +391,6 @@ angle_t R_PointToAngle(fixed_t x, fixed_t y)
 }
 
 //
-// R_ResetFOV
-// 
 // SoM: Called by I_InitGraphicsMode when the video mode is changed.
 // Sets the base-line fov for the given screen ratio.
 //
@@ -400,7 +398,7 @@ angle_t R_PointToAngle(fixed_t x, fixed_t y)
 //
 void R_ResetFOV(int width, int height)
 {
-   double ratio = (double)width / (double)height;
+   const double ratio = static_cast<double>(width) / static_cast<double>(height);
 
    // Special case for tallscreen modes
    if((width == 320 && height == 200) ||
@@ -408,12 +406,12 @@ void R_ResetFOV(int width, int height)
    {
       fov = 90;
       return;
-   }   
+   }
 
    // The general equation is as follows:
    // y = mx + b -> fov = (75/2) * ratio + 40
    // This gives 90 for 4:3, 100 for 16:10, and 106 for 16:9.
-   fov = (int)((75.0/2.0) * ratio + 40.0);
+   fov = static_cast<int>((75.0/2.0) * ratio + 40.0);
 
    if(fov < 20)
       fov = 20;
@@ -776,7 +774,7 @@ void R_IncrementFrameid()
 
       // Do as the description says...
       for(int i = 0; i < numsectors; ++i)
-         pSectorBoxes[i].fframeid = pSectorBoxes[i].cframeid = 0;
+         pSectorBoxes[i].frameid.floor = pSectorBoxes[i].frameid.ceiling = 0;
    }
 }
 
@@ -798,31 +796,42 @@ static void R_interpolateViewPoint(player_t *player, fixed_t lerp)
    else
    {
       viewz = lerpCoord(lerp, player->prevviewz, player->viewz);
-      const line_t *pline;
-      const linkdata_t *psec;
       Mobj *thing = player->mo;
 
-      if((psec = thing->prevpos.ldata))
+      if(const linkdata_t * psec = thing->prevpos.ldata)
       {
          v2fixed_t orgtarg =
          {
-            thing->x - psec->deltax,
-            thing->y - psec->deltay
+            thing->x - psec->delta.x,
+            thing->y - psec->delta.y
          };
          viewx = lerpCoord(lerp, thing->prevpos.x, orgtarg.x);
          viewy = lerpCoord(lerp, thing->prevpos.y, orgtarg.y);
-         if(((pline = thing->prevpos.portalline) &&
-             P_PointOnLineSide(viewx, viewy, pline)) ||
-            (!pline && FixedMul(viewz - psec->planez,
-                                player->prevviewz - psec->planez) < 0))
+
+         bool execute = false;
+         const line_t *pline = thing->prevpos.portalline;
+         if(pline && P_PointOnLineSidePrecise(viewx, viewy, pline))
+            execute = true;
+         if(!execute && !pline)
+         {
+            const surface_t *psurface = thing->prevpos.portalsurface;
+            if(psurface)
+            {
+               fixed_t planez = P_PortalZ(*psurface);
+               execute = FixedMul(viewz - planez, player->prevviewz - planez) < 0;
+            }
+         }
+
+         if(execute)
          {
             // Once it crosses it, we're done
             thing->prevpos.portalline = nullptr;
             thing->prevpos.ldata = nullptr;
-            thing->prevpos.x += psec->deltax;
-            thing->prevpos.y += psec->deltay;
-            viewx += psec->deltax;
-            viewy += psec->deltay;
+            thing->prevpos.portalsurface = nullptr;
+            thing->prevpos.x += psec->delta.x;
+            thing->prevpos.y += psec->delta.y;
+            viewx += psec->delta.x;
+            viewy += psec->delta.y;
          }
       }
       else
@@ -884,23 +893,23 @@ static void R_setSectorInterpolationState(secinterpstate_e state)
       {
          auto &si  = sectorinterps[i];
          auto &sec = sectors[i];
-         
-         if(si.prevfloorheight   != sec.floorheight ||
-            si.prevceilingheight != sec.ceilingheight)
+
+         if(si.prevfloorheight   != sec.srf.floor.height ||
+            si.prevceilingheight != sec.srf.ceiling.height)
          {
             si.interpolated = true;
 
             // backup heights
-            si.backfloorheight    = sec.floorheight;
-            si.backfloorheightf   = sec.floorheightf;
-            si.backceilingheight  = sec.ceilingheight;
-            si.backceilingheightf = sec.ceilingheightf;
+            si.backfloorheight    = sec.srf.floor.height;
+            si.backfloorheightf   = sec.srf.floor.heightf;
+            si.backceilingheight  = sec.srf.ceiling.height;
+            si.backceilingheightf = sec.srf.ceiling.heightf;
 
             // set interpolated heights
-            sec.floorheight    = lerpCoord(view.lerp, si.prevfloorheight,   sec.floorheight);
-            sec.ceilingheight  = lerpCoord(view.lerp, si.prevceilingheight, sec.ceilingheight);
-            sec.floorheightf   = M_FixedToFloat(sec.floorheight);
-            sec.ceilingheightf = M_FixedToFloat(sec.ceilingheight);
+            sec.srf.floor.height = lerpCoord(view.lerp, si.prevfloorheight,   sec.srf.floor.height);
+            sec.srf.ceiling.height = lerpCoord(view.lerp, si.prevceilingheight, sec.srf.ceiling.height);
+            sec.srf.floor.heightf = M_FixedToFloat(sec.srf.floor.height);
+            sec.srf.ceiling.heightf = M_FixedToFloat(sec.srf.ceiling.height);
          }
          else
             si.interpolated = false;
@@ -911,14 +920,14 @@ static void R_setSectorInterpolationState(secinterpstate_e state)
       {
          auto &si  = sectorinterps[i];
          auto &sec = sectors[i];
-         
+
          // restore backed up heights
          if(si.interpolated)
          {
-            sec.floorheight    = si.backfloorheight;
-            sec.floorheightf   = si.backfloorheightf;
-            sec.ceilingheight  = si.backceilingheight;
-            sec.ceilingheightf = si.backceilingheightf;
+            sec.srf.floor.height = si.backfloorheight;
+            sec.srf.floor.heightf = si.backfloorheightf;
+            sec.srf.ceiling.height = si.backceilingheight;
+            sec.srf.ceiling.heightf = si.backceilingheightf;
          }
       }
       break;
@@ -940,13 +949,13 @@ static void R_setScrollInterpolationState(secinterpstate_e state)
          P_ForEachScrolledSector([](sector_t *sector, bool isceiling, v2fixed_t offset) {
             if(isceiling)
             {
-               sector->ceiling_xoffs += lerpCoord(view.lerp, -offset.x, 0);
-               sector->ceiling_yoffs += lerpCoord(view.lerp, -offset.y, 0);
+               sector->srf.ceiling.offset.x += lerpCoord(view.lerp, -offset.x, 0);
+               sector->srf.ceiling.offset.y += lerpCoord(view.lerp, -offset.y, 0);
             }
             else
             {
-               sector->floor_xoffs += lerpCoord(view.lerp, -offset.x, 0);
-               sector->floor_yoffs += lerpCoord(view.lerp, -offset.y, 0);
+               sector->srf.floor.offset.x += lerpCoord(view.lerp, -offset.x, 0);
+               sector->srf.floor.offset.y += lerpCoord(view.lerp, -offset.y, 0);
             }
          });
          break;
@@ -958,13 +967,13 @@ static void R_setScrollInterpolationState(secinterpstate_e state)
          P_ForEachScrolledSector([](sector_t *sector, bool isceiling, v2fixed_t offset) {
             if(isceiling)
             {
-               sector->ceiling_xoffs -= lerpCoord(view.lerp, -offset.x, 0);
-               sector->ceiling_yoffs -= lerpCoord(view.lerp, -offset.y, 0);
+               sector->srf.ceiling.offset.x -= lerpCoord(view.lerp, -offset.x, 0);
+               sector->srf.ceiling.offset.y -= lerpCoord(view.lerp, -offset.y, 0);
             }
             else
             {
-               sector->floor_xoffs -= lerpCoord(view.lerp, -offset.x, 0);
-               sector->floor_yoffs -= lerpCoord(view.lerp, -offset.y, 0);
+               sector->srf.floor.offset.x -= lerpCoord(view.lerp, -offset.x, 0);
+               sector->srf.floor.offset.y -= lerpCoord(view.lerp, -offset.y, 0);
             }
          });
          break;
@@ -1020,6 +1029,12 @@ static void R_SetupFrame(player_t *player, camera_t *camera)
       R_interpolateViewPoint(camera, walkcam_active ? R_GetLerp(true) : lerp);
    }
 
+   // Bound the pitch here
+   if(viewpitch < -ANGLE_1 * MAXPITCHUP)
+      viewpitch = -ANGLE_1 * MAXPITCHUP;
+   else if(viewpitch > ANGLE_1 * MAXPITCHDOWN)
+      viewpitch = ANGLE_1 * MAXPITCHDOWN;
+
    extralight = player->extralight;
    viewsin = finesine[viewangle>>ANGLETOFINESHIFT];
    viewcos = finecosine[viewangle>>ANGLETOFINESHIFT];
@@ -1053,15 +1068,11 @@ static void R_SetupFrame(player_t *player, camera_t *camera)
    // appear a half-pixel too low (the entire display was too low actually).
    if(viewpitch)
    {
-      fixed_t dy = FixedMul(focallen_y, 
-                            finetangent[(ANG90 - viewpitch) >> ANGLETOFINESHIFT]);
-            
-      // haleyjd: must bound after zooming
-      if(dy < -viewheightfrac)
-         dy = -viewheightfrac;
-      else if(dy > viewheightfrac)
-         dy = viewheightfrac;
-      
+      const fixed_t dy = FixedMul(
+         focallen_y,
+         finetangent[(ANG90 - viewpitch) >> ANGLETOFINESHIFT]
+      );
+
       centeryfrac = viewheightfrac + dy;
    }
    else
@@ -1077,28 +1088,32 @@ static void R_SetupFrame(player_t *player, camera_t *camera)
    ++validcount;
 }
 
-typedef enum
+//
+// Designators for Boom fake-surface sector view area
+//
+enum class ViewArea
 {
-   area_normal,
-   area_below,
-   area_above
-} area_t;
+   normal,
+   below,
+   above
+};
 
+// CVAR to force Boom viewpoint-dependent global colormaps.
 bool r_boomcolormaps;
 
 //
 // Get sector colormap based on the view area constant
 //
-static int R_getSectorColormap(const sector_t &sector, area_t viewarea)
+static int R_getSectorColormap(const sector_t &sector, ViewArea viewarea)
 {
    switch(viewarea)
    {
-   case area_above:
-      return sector.topmap;
-   case area_below:
-      return sector.bottommap;
-   default:
-      return sector.midmap;
+      case ViewArea::above:
+         return sector.topmap;
+      case ViewArea::below:
+         return sector.bottommap;
+      default:
+         return sector.midmap;
    }
 }
 
@@ -1112,67 +1127,78 @@ static int R_getSectorColormap(const sector_t &sector, area_t viewarea)
 //
 void R_SectorColormap(const sector_t *s)
 {
-   int cm = 0;
-   area_t viewarea;
-   bool boomover = false;
+   int colormapIndex = 0;
+   bool boomStyleOverride = false;
+   ViewArea area = ViewArea::normal;
 
-   // haleyjd: Under BOOM logic, the view sector determines the colormap of
-   // all sectors in view. This is supported for backward compatibility.
-   if(r_boomcolormaps || demo_version <= 203 ||
-      LevelInfo.sectorColormaps == INFO_SECMAP_BOOM)
-   {
+   // haleyjd: Under BOOM logic, the view sector determines the colormap of all sectors in view.
+   // This is supported for backward compatibility.
+   if(r_boomcolormaps || demo_version <= 203 || LevelInfo.sectorColormaps == INFO_SECMAP_BOOM)
       s = view.sector;
-   }
-   else if(LevelInfo.sectorColormaps != INFO_SECMAP_SMMU && 
-      view.sector->heightsec != -1 && 
-      (view.sector->topmap | view.sector->midmap | view.sector->bottommap) & 
-      COLORMAP_BOOMKIND)
+   else if(LevelInfo.sectorColormaps != INFO_SECMAP_SMMU && view.sector->heightsec != -1 &&
+      (view.sector->topmap | view.sector->midmap | view.sector->bottommap) & COLORMAP_BOOMKIND)
    {
-      // We're in a Boom-kind sector. Now check each area
-      int hs = view.sector->heightsec;
-      viewarea = (viewz < sectors[hs].floorheight ? area_below : 
-         viewz > sectors[hs].ceilingheight ? area_above : area_normal);
-      cm = R_getSectorColormap(*view.sector, viewarea);
-      if(cm & COLORMAP_BOOMKIND)
+      // Boom colormap compatibility disabled from both console and EMAPINFO and game mode is modern
+      // Eternity.
+
+      // On the other hand, modern SMMU coloured sectors is not enforced in EMAPINFO, so we may
+      // still have Boom-style global colormap changing (as opposed to direct ExtraData/UDMF
+      // setting). We're in a fake-surfaces sector which has Boom-style colormaps set on some of the
+      // layers. Check each area.
+      const sector_t &heightSector = sectors[view.sector->heightsec];
+
+      // Pick area ID the viewer is in
+      if(viewz < heightSector.srf.floor.height)
+         area = ViewArea::below;
+      else if(viewz > heightSector.srf.ceiling.height)
+         area = ViewArea::above;
+      else
+         area = ViewArea::normal;
+
+      colormapIndex = R_getSectorColormap(*view.sector, area);
+      if(colormapIndex & COLORMAP_BOOMKIND)  // is it one of those set via the Boom method?
       {
-         boomover = true;
+         boomStyleOverride = true;
          s = view.sector;
       }
    }
     
-   if(!boomover)  // if overridden by Boom transfers, don't process this again
+   if(!boomStyleOverride)  // if overridden by Boom transfers, don't process this again
    {
       if(s->heightsec == -1)
-         viewarea = area_normal;
+         area = ViewArea::normal;
       else
       {
-         // find which area the viewpoint is in
+         // find which actual area the viewpoint is in. Must check from the viewer's sector.
          int hs = view.sector->heightsec;
-         viewarea =
-            (hs == -1 ? area_normal :
-               viewz < sectors[hs].floorheight ? area_below :
-               viewz > sectors[hs].ceilingheight ? area_above : area_normal);
+
+         if(hs == -1)
+            area = ViewArea::normal;
+         else if(viewz < sectors[hs].srf.floor.height)
+            area = ViewArea::below;
+         else if(viewz > sectors[hs].srf.ceiling.height)
+            area = ViewArea::above;
+         else
+            area = ViewArea::normal;
+
       }
-      cm = R_getSectorColormap(*s, viewarea);
+      colormapIndex = R_getSectorColormap(*s, area);
    }
 
-   if(cm & COLORMAP_BOOMKIND)
+   if(colormapIndex & COLORMAP_BOOMKIND)
    {
-      // If we got Boom-set colormaps on OTHER sectors than the view sector,
-      // then use the view sector's colormap. Needed to prevent Boom-coloured
-      // sectors from showing up when seen from non-coloured sectors.
-      if(!r_boomcolormaps && !boomover &&
-         LevelInfo.sectorColormaps != INFO_SECMAP_SMMU)
-      {
-         cm = R_getSectorColormap(*view.sector, viewarea);
-      }
+      // If we got Boom-set colormaps on OTHER sectors than the view sector, then use the view
+      // sector's colormap. Needed to prevent Boom-coloured sectors from showing up when seen from
+      // non-coloured sectors.
+      if(!r_boomcolormaps && !boomStyleOverride && LevelInfo.sectorColormaps != INFO_SECMAP_SMMU)
+         colormapIndex = R_getSectorColormap(*view.sector, area);
 
-      cm &= ~COLORMAP_BOOMKIND;
+      colormapIndex &= ~COLORMAP_BOOMKIND;
    }
 
-   fullcolormap = colormaps[cm];
-   zlight = c_zlight[cm];
-   scalelight = c_scalelight[cm];
+   fullcolormap = colormaps[colormapIndex];
+   zlight = c_zlight[colormapIndex];
+   scalelight = c_scalelight[colormapIndex];
 
    if(viewplayer->fixedcolormap)
    {
@@ -1181,7 +1207,7 @@ void R_SectorColormap(const sector_t *s)
         + viewplayer->fixedcolormap*256*sizeof(lighttable_t);
    }
    else
-      fixedcolormap = NULL;   
+      fixedcolormap = nullptr;   
 }
 
 angle_t R_WadToAngle(int wadangle)
@@ -1248,15 +1274,15 @@ void R_RenderPlayerView(player_t* player, camera_t *camerapoint)
    // Check for new console commands.
    NetUpdate();
 
-   R_SetMaskedSilhouette(NULL, NULL);
+   R_SetMaskedSilhouette(nullptr, nullptr);
    
    // Push the first element on the Post-BSP stack
-   R_PushPost(true, NULL);
+   R_PushPost(true, nullptr);
    
    // SoM 12/9/03: render the portals.
    R_RenderPortals();
 
-   R_DrawPlanes(NULL);
+   R_DrawPlanes(nullptr);
    
    // Check for new console commands.
    NetUpdate();
@@ -1329,11 +1355,11 @@ enum
 };
 
 // tlstyle struct for R_DoomTLStyle
-typedef struct r_tlstyle_s
+struct r_tlstyle_t
 {
    const char *className; // name of the thingtype
    int actions[3];        // actions
-} r_tlstyle_t;
+};
 
 static r_tlstyle_t DoomThingStyles[] =
 {
@@ -1451,34 +1477,34 @@ void R_DoomTLStyle()
 
 static const char *handedstr[]  = { "right", "left" };
 static const char *ptranstr[]   = { "none", "smooth", "general" };
-static const char *coleng[]     = { "normal", "quad" };
+static const char *coleng[]     = { "normal" };
 static const char *spaneng[]    = { "highprecision" };
 static const char *tlstylestr[] = { "none", "boom", "new" };
 
-VARIABLE_BOOLEAN(lefthanded, NULL,                  handedstr);
-VARIABLE_BOOLEAN(r_blockmap, NULL,                  onoff);
-VARIABLE_BOOLEAN(flashing_hom, NULL,                onoff);
-VARIABLE_BOOLEAN(r_precache, NULL,                  onoff);
-VARIABLE_TOGGLE(showpsprites,  NULL,                yesno);
-VARIABLE_BOOLEAN(stretchsky, NULL,                  onoff);
-VARIABLE_BOOLEAN(r_swirl, NULL,                     onoff);
-VARIABLE_BOOLEAN(general_translucency, NULL,        onoff);
-VARIABLE_BOOLEAN(autodetect_hom, NULL,              yesno);
-VARIABLE_TOGGLE(r_boomcolormaps, NULL,              onoff);
+VARIABLE_BOOLEAN(lefthanded, nullptr,               handedstr);
+VARIABLE_BOOLEAN(r_blockmap, nullptr,               onoff);
+VARIABLE_BOOLEAN(flashing_hom, nullptr,             onoff);
+VARIABLE_BOOLEAN(r_precache, nullptr,               onoff);
+VARIABLE_TOGGLE(showpsprites,  nullptr,             yesno);
+VARIABLE_BOOLEAN(stretchsky, nullptr,               onoff);
+VARIABLE_BOOLEAN(r_swirl, nullptr,                  onoff);
+VARIABLE_BOOLEAN(general_translucency, nullptr,     onoff);
+VARIABLE_BOOLEAN(autodetect_hom, nullptr,           yesno);
+VARIABLE_TOGGLE(r_boomcolormaps, nullptr,           onoff);
 
 // SoM: Variable FOV
-VARIABLE_INT(fov, NULL, 20, 179, NULL);
+VARIABLE_INT(fov, nullptr, 20, 179, nullptr);
 
 // SoM: Portal tainted
-VARIABLE_BOOLEAN(showtainted, NULL,                 onoff);
+VARIABLE_BOOLEAN(showtainted, nullptr,              onoff);
 
-VARIABLE_INT(tran_filter_pct,     NULL, 0, 100,                  NULL);
-VARIABLE_INT(screenSize,          NULL, 0, 8,                    NULL);
-VARIABLE_INT(usegamma,            NULL, 0, 4,                    NULL);
-VARIABLE_INT(particle_trans,      NULL, 0, 2,                    ptranstr);
-VARIABLE_INT(r_column_engine_num, NULL, 0, NUMCOLUMNENGINES - 1, coleng);
-VARIABLE_INT(r_span_engine_num,   NULL, 0, NUMSPANENGINES - 1,   spaneng);
-VARIABLE_INT(r_tlstyle,           NULL, 0, R_TLSTYLE_NUM - 1,    tlstylestr);
+VARIABLE_INT(tran_filter_pct,     nullptr, 0, 100,                  nullptr);
+VARIABLE_INT(screenSize,          nullptr, 0, 8,                    nullptr);
+VARIABLE_INT(usegamma,            nullptr, 0, 4,                    nullptr);
+VARIABLE_INT(particle_trans,      nullptr, 0, 2,                    ptranstr);
+VARIABLE_INT(r_column_engine_num, nullptr, 0, NUMCOLUMNENGINES - 1, coleng);
+VARIABLE_INT(r_span_engine_num,   nullptr, 0, NUMSPANENGINES - 1,   spaneng);
+VARIABLE_INT(r_tlstyle,           nullptr, 0, R_TLSTYLE_NUM - 1,    tlstylestr);
 
 CONSOLE_VARIABLE(r_fov, fov, 0)
 {
@@ -1517,7 +1543,7 @@ CONSOLE_VARIABLE(gamma, usegamma, 0)
    player_printf(&players[consoleplayer], "%s", msg);
 
    // change to new gamma val
-   I_SetPalette(NULL);
+   I_SetPalette(nullptr);
 }
 
 CONSOLE_VARIABLE(lefthanded, lefthanded, 0) {}

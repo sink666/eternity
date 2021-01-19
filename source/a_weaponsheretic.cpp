@@ -213,7 +213,7 @@ void A_MaceBallImpact(actionargs_t *actionargs)
    constexpr int MAGIC_JUNK = 1234;
 
    Mobj *ball = actionargs->actor;
-   if((ball->z <= ball->zref.floor) && E_HitFloor(ball))
+   if((ball->z <= ball->zref.floor) && E_WouldHitFloorWater(*ball))
    {
       // Landed in some sort of liquid
       ball->remove();
@@ -244,7 +244,7 @@ void A_MaceBallImpact2(actionargs_t *actionargs)
    angle_t   angle;
    const int tnum = E_SafeThingType(MT_MACEFX3);
 
-   if((ball->z <= ball->zref.floor) && E_HitFloor(ball))
+   if((ball->z <= ball->zref.floor) && E_WouldHitFloorWater(*ball))
    {
       // Landed in some sort of liquid
       ball->remove();
@@ -303,8 +303,16 @@ void A_FireMacePL2(actionargs_t *actionargs)
       // NOTE: the 'magic' number came from computing how Heretic's constant slope calculation fits
       // with a super mace projectile's forward speed.
       mo->momz = FixedMul(fx->speed, FixedMul(slope, 50615)) + (2 * FRACUNIT);
-      if(clip.linetarget)
+      if(autoaim && clip.linetarget)
          P_SetTarget(&mo->tracer, clip.linetarget);
+      else if(!autoaim)
+      {
+         fixed_t oldBulletSlope = bulletslope;
+         P_BulletSlope(player->mo);    // use the same routine as in A_FirePlayerMissile
+         bulletslope = oldBulletSlope; // don't tamper with it
+         if(clip.linetarget)
+            P_SetTarget(&mo->tracer, clip.linetarget);
+      }
    }
    S_StartSound(player->mo, sfx_lobsht);
 }
@@ -313,10 +321,10 @@ void A_DeathBallImpact(actionargs_t *actionargs)
 {
    int      i;
    Mobj    *target, *ball = actionargs->actor;
-   angle_t  angle;
+   angle_t  angle = 0;
    bool     newAngle;
 
-   if((ball->z <= ball->zref.floor) && E_HitFloor(ball))
+   if((ball->z <= ball->zref.floor) && E_WouldHitFloorWater(*ball))
    {
       // Landed in some sort of liquid
       ball->remove();
@@ -555,7 +563,7 @@ void A_FirePhoenixPL2(actionargs_t *actionargs)
    P_CheckMissileSpawn(mo);
 }
 
-void A_ShutdownPhoenixPL2(actionargs_t *actionargs)
+void A_SubtractAmmo(actionargs_t *actionargs)
 {
    player_t *player = actionargs->actor->player;
    if(!player)
@@ -696,7 +704,7 @@ void A_HticSpawnFireBomb(actionargs_t *actionargs)
    // The footclip check turns into:
    //   (mo->flags2 & 1)
    // due to C operator precedence and a lack of parens/brackets.
-   const fixed_t z = comp[comp_terrain] || !((mo->flags2 & MF2_FOOTCLIP) && E_HitFloor(mo)) ?
+   const fixed_t z = getComp(comp_terrain) || !((mo->flags2 & MF2_FOOTCLIP) && E_HitFloor(mo)) ?
                      mo->z : mo->z - (15 * FRACUNIT);
    bomb = P_SpawnMobj(mo->x + (24 * finecosine[angle]),
                       mo->y + (24 * finesine[angle]),

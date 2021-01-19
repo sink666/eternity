@@ -4,8 +4,116 @@ Changes by Ioan Chera in Eternity Engine
 Dates are in dd.mm.yyyy format. Most recent update is first.
 
 ========================
+Since v4.01.00 "Tyrfing"
+========================
+
+--------------------------------------------------------------------------------
+15.11.2020
+
+BUGFIX: Fixed fullscreen-desktop transition errors causing the display to mess
+        up in macOS. Weird stuff may still happens if somebody pulls the monitor
+        from the laptop.
+
+IMPROVEMENT: Classic (exclusive) fullscreen is once again available on macOS.
+
+========================
 Since v4.00.00 "Völuspá"
 ========================
+
+--------------------------------------------------------------------------------
+12.10.2020
+
+IMPROVEMENT: Added a new EDF feature, compatibilityhacks, which shall be used
+             with MD5 checksums to setup comp_ settings.
+
+             To helps us here, we shall have the "mapchecksum" console command.
+
+--------------------------------------------------------------------------------
+11.10.2020
+
+FEATURE: New delta structure, splashdelta. It's similar to terraindelta but
+         applies to splash definitions.
+
+--------------------------------------------------------------------------------
+10.10.2020
+
+IMPROVEMENT: Flying now has the properties from Heretic: when on ground, the
+             friction is as on ground, and when on air, bobbing is removed
+             (having bobbing in air was actually an old Eternity regression).
+             Also, in Heretic if you press "fly up" you will automatically
+             activate the powerup.
+
+--------------------------------------------------------------------------------
+09.10.2020
+
+FEATURE: New EDF game property, game.autoflightartifact, which names the
+         artifact to use when attempting to fly.
+
+--------------------------------------------------------------------------------
+05.10.2020
+
+FEATURE: new thing flag, UNSTEPPABLE, which implements the Heretic specific
+         situation of being unable to step on things. Makes sense when playing
+         without jumping. All Heretic solid things shall inherit from a common
+         thing with SOLID and this flag.
+
+--------------------------------------------------------------------------------
+25.07.2020
+
+BUGFIX: Fixed HOM happening when trying to render same portal from two separate
+        windows.
+
+IMPROVEMENT: Self-tagging Portal_Define flipped-anchor visual portals are now 
+        possible, though there'll be no mirror.
+
+--------------------------------------------------------------------------------
+19.07.2020
+
+IMPROVEMENT: Thing_Destroy now works like in GZDoom, unless level is vanilla
+             Hexen (where it will still support arg 3). Most notably, arg 2 is
+             now "flags" and 1 means "extreme death".
+
+--------------------------------------------------------------------------------
+19.06.2020
+
+IMPROVEMENT: Plane portals can now render sloped visplanes, with the slope
+             copied from the source sector. Note that horizon portals still lack
+             this feature, due to how they were designed.
+
+--------------------------------------------------------------------------------
+13.06.2020
+
+BUGFIX: Fixed the FLIES thingtype particlefx from sounding badly.
+
+--------------------------------------------------------------------------------
+25.05.2020
+
+BUGFIX: Fixed an occasional crash happening when starting maps with things with
+        negative doomednums.
+
+--------------------------------------------------------------------------------
+3.05.2020
+
+BUGFIX: Odd-duration frames now restore correctly when returning to nightmare
+        mode to normal.
+
+        Fixed the CLIPMIDTEX linedef flag not working over portals.
+
+--------------------------------------------------------------------------------
+26.04.2020
+
+FEATURE: New console command: warp, which, like in ZDoom, teleports player to
+         given coordinates.
+
+--------------------------------------------------------------------------------
+23.04.2020
+
+BUGFIX: Fixed the ChangeSkill linedef special acting completely wrong when
+        called from ACS, and crashing when such a script is triggered from the
+        console.
+        
+        Fixed a crash happening when entering a sector with an invalid colormap
+        specified in the UDMF editor or ExtraData.
 
 --------------------------------------------------------------------------------
 5.04.2020
@@ -13,8 +121,17 @@ Since v4.00.00 "Völuspá"
 FEATURE: Added the offset(,) Decorate state specifier which exists in ZDoom and
          is used to set the misc1 and misc2 flags, which are also capable of
          setting weapon coordinates.
+         
+         Eternity is also capable of interpolation when using offset(). By
+         default it's disabled, but you can enable it by using the "interpolate"
+         specifier as a third argument, for example: offset(1, 32, interpolate).
+         When inheriting via the Decorate syntax and reapplying offset(),
+         interpolation will be disabled again unless you specify it again.
+         
+         For the standard "frame" EDF section, you can use the +|-interpolate 
+         specifier to add or remove the flag.
 
-         Added the DOOMWEAPONOFFSET gameproperties flag which is already defined
+         Added the DOOMWEAPONOFFSET gameproperties flag which is already enabled
          for DOOM (solely for Dehacked and past EDF mod compatibility) and
          enables the less intuitive DOOM rule on when offsets have effect.
          Otherwise the better Hexen rule applies.

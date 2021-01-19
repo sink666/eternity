@@ -72,7 +72,7 @@ cb_video_t video =
    FRACUNIT,
    1.0f, 1.0f, 1.0f, 1.0f, 
    false,
-   {NULL, NULL, NULL, NULL}
+   {nullptr, nullptr, nullptr, nullptr}
 };
 
 //=============================================================================
@@ -96,7 +96,7 @@ void V_DrawBox(int x, int y, int w, int h)
    V_DrawPatch(x, y, &subscreen43, bgp[0]);    // ul
    for(j = x+xs; j < x+w-xs; j += xs)       // uc
       V_DrawPatch(j, y, &subscreen43, bgp[1]);
-   V_DrawPatchShadowed(j, y, &subscreen43, bgp[2], NULL, 65536);    // ur
+   V_DrawPatchShadowed(j, y, &subscreen43, bgp[2], nullptr, 65536);    // ur
    
    // middle rows
    for(i = y+ys; i < y+h-ys; i += ys)
@@ -104,14 +104,14 @@ void V_DrawBox(int x, int y, int w, int h)
       V_DrawPatch(x, i, &subscreen43, bgp[3]);    // cl
       for(j = x+xs; j < x+w-xs; j += xs)       // cc
          V_DrawPatch(j, i, &subscreen43, bgp[4]);
-      V_DrawPatchShadowed(j, i, &subscreen43, bgp[5], NULL, 65536);    // cr
+      V_DrawPatchShadowed(j, i, &subscreen43, bgp[5], nullptr, 65536);    // cr
    }
    
    // bottom row
-   V_DrawPatchShadowed(x, i, &subscreen43, bgp[6], NULL, 65536);
+   V_DrawPatchShadowed(x, i, &subscreen43, bgp[6], nullptr, 65536);
    for(j = x+xs; j < x+w-xs; j += xs)
-      V_DrawPatchShadowed(j, i, &subscreen43, bgp[7], NULL, 65536);
-   V_DrawPatchShadowed(j, i, &subscreen43, bgp[8], NULL, 65536);
+      V_DrawPatchShadowed(j, i, &subscreen43, bgp[7], nullptr, 65536);
+   V_DrawPatchShadowed(j, i, &subscreen43, bgp[8], nullptr, 65536);
 }
 
 static void V_InitBox()
@@ -216,7 +216,7 @@ void V_LoadingIncrease()
    else
       V_DrawLoading();
 
-   if(loading_amount == loading_total) loading_message = NULL;
+   if(loading_amount == loading_total) loading_message = nullptr;
 }
 
 //
@@ -420,6 +420,10 @@ static void V_initSubScreen43()
                                  static_cast<double>(vbscreen.height);
       unscaledw = static_cast<int>(round(SCREENHEIGHT * scaleaspect));
 
+      // FIXME(?): vbscreenyscaled doesn't work if unscaledw is larger than vbscreen.width,
+      // which happens if the vbscreen.height < SCREENHEIGHT * 1.2 (roughly)
+      if(unscaledw > vbscreen.width)
+         unscaledw = vbscreen.width;
       // FIXME(?): our scaling code cannot handle a subscreen smaller than 320x200
       if(subwidth < SCREENWIDTH)
       {
@@ -456,14 +460,14 @@ static void V_InitScreenVBuffer()
                      video.bitdepth, video.screens[0]);
    V_SetScaling(&vbscreen, SCREENWIDTH, SCREENHEIGHT);
 
-   V_InitVBufferFrom(&backscreen1, video.width, video.height, video.width, 
+   V_InitVBufferFrom(&backscreen1, video.width, video.height, video.height,
                      video.bitdepth, video.screens[1]);
    V_SetScaling(&backscreen1, SCREENWIDTH, SCREENHEIGHT);
 
    // Only vbscreen and backscreen1 need scaling set.
-   V_InitVBufferFrom(&backscreen2, video.width, video.height, video.width, 
+   V_InitVBufferFrom(&backscreen2, video.width, video.height, video.height,
                      video.bitdepth, video.screens[2]);
-   V_InitVBufferFrom(&backscreen3, video.width, video.height, video.width, 
+   V_InitVBufferFrom(&backscreen3, video.width, video.height, video.height,
                      video.bitdepth, video.screens[3]);
 
    // Init subscreen43
@@ -478,7 +482,7 @@ static void V_InitScreenVBuffer()
 //
 void V_Init()
 {
-   static byte *s = NULL;
+   static byte *s = nullptr;
    
    int size = video.width * video.height;
 
@@ -564,7 +568,7 @@ void V_InitMisc()
 //
 
 const char *str_ticker[] = { "off", "chart", "classic", "text" };
-VARIABLE_INT(v_ticker, NULL, 0, 3,  str_ticker);
+VARIABLE_INT(v_ticker, nullptr, 0, 3,  str_ticker);
 
 CONSOLE_COMMAND(v_fontcolors, 0)
 {

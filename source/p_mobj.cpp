@@ -281,6 +281,22 @@ inline static void P_setSpriteBySkin(Mobj &mobj, const state_t &st)
 }
 
 //
+// Private action to simulate the vanilla_heretic pod death exactly
+//
+static void A_vanillaHereticPodFinalAction(actionargs_t *args)
+{
+   Mobj *actor = args->actor;
+   actor->momx = actor->momy = actor->momz = 0;
+   actor->z = actor->zref.ceiling + 4 * FRACUNIT;
+   actor->flags &= ~(MF_SHOOTABLE | MF_FLOAT | MF_SKULLFLY | MF_SOLID);
+   actor->flags |= MF_CORPSE | MF_DROPOFF | MF_NOGRAVITY;
+   actor->flags2 &= ~MF2_LOGRAV;
+   actor->flags2 |= MF2_DONTDRAW;
+   actor->flags3 &= ~MF3_PASSMOBJ;
+//   actor->player = NULL;
+};
+
+//
 // P_SetMobjState
 //
 // Returns true if the mobj is still present.
@@ -301,7 +317,7 @@ bool P_SetMobjState(Mobj* mobj, statenum_t state)
 
    // haleyjd 03/27/10: new state cycle detection
    static bool firsttime = true; // for initialization
-   DLListItem<seenstate_t> *seenstates  = NULL; // list of seenstates for this instance
+   DLListItem<seenstate_t> *seenstates  = nullptr; // list of seenstates for this instance
    bool ret = true;                           // return value
 
    if(firsttime)
@@ -314,13 +330,19 @@ bool P_SetMobjState(Mobj* mobj, statenum_t state)
    {
       if(state == NullStateNum)
       {
-         mobj->state = NULL;
+         mobj->state = nullptr;
          mobj->remove();
          ret = false;
          break;                 // killough 4/9/98
       }
 
       st = states[state];
+      if(vanilla_heretic && mobj->type == E_SafeThingType(MT_POD) && mobj->health <= 0 &&
+         st->tics == 0 && st->nextstate == NullStateNum)
+      {
+         st->tics = 1050;
+         st->action = A_vanillaHereticPodFinalAction;
+      }
       mobj->state = st;
       mobj->tics = st->tics;
 
@@ -338,7 +360,7 @@ bool P_SetMobjState(Mobj* mobj, statenum_t state)
          actionargs.actiontype = actionargs_t::MOBJFRAME;
          actionargs.actor      = mobj;
          actionargs.args       = st->args;
-         actionargs.pspr       = NULL;
+         actionargs.pspr       = nullptr;
 
          st->action(&actionargs);
       }
@@ -382,7 +404,7 @@ bool P_SetMobjStateNF(Mobj *mobj, statenum_t state)
    if(state == NullStateNum)
    {
       // remove mobj
-      mobj->state = NULL;
+      mobj->state = nullptr;
       mobj->remove();
       return false;
    }
@@ -418,17 +440,17 @@ void P_ExplodeMissile(Mobj *mo, const sector_t *topedgesec)
    // haleyjd: an attempt at fixing explosions on skies (works!)
    if(demo_version >= 329)
    {
-      const sector_t *ceilingsector = P_ExtremeSectorAtPoint(mo, true);
-      if((ceilingsector->intflags & SIF_SKY || 
+      const sector_t *ceilingsector = P_ExtremeSectorAtPoint(mo, surf_ceil);
+      if((ceilingsector->intflags & SIF_SKY ||
          R_IsSkyLikePortalCeiling(*ceilingsector)) &&
-         mo->z >= ceilingsector->ceilingheight - P_ThingInfoHeight(mo->info))
+         mo->z >= ceilingsector->srf.ceiling.height - P_ThingInfoHeight(mo->info))
       {
          mo->remove(); // don't explode on the actual sky itself
          return;
       }
       if(topedgesec && demo_version >= 342 && (topedgesec->intflags & SIF_SKY ||
-         R_IsSkyLikePortalCeiling(*topedgesec)) && 
-         mo->z >= topedgesec->ceilingheight - P_ThingInfoHeight(mo->info))
+         R_IsSkyLikePortalCeiling(*topedgesec)) &&
+         mo->z >= topedgesec->srf.ceiling.height - P_ThingInfoHeight(mo->info))
       {
          mo->remove(); // don't explode on the edge
          return;
@@ -446,6 +468,10 @@ void P_ExplodeMissile(Mobj *mo, const sector_t *topedgesec)
    }
 
    mo->flags &= ~MF_MISSILE;
+
+   // VANILLA_HERETIC: "nosplash" is tied to "missile" there, so it has to be joined sometimes
+   if(vanilla_heretic)
+      mo->flags2 &= ~MF2_NOSPLASH;
 
    S_StartSound(mo, mo->info->deathsound);
 
@@ -481,7 +507,12 @@ void P_XYMovement(Mobj* mo)
          // the skull slammed into something
          mo->flags &= ~MF_SKULLFLY;
          mo->momz = 0;
-         P_SetMobjState(mo, mo->info->spawnstate);
+
+         if(mo->intflags & MIF_SKULLFLYSEE)
+            P_SetMobjState(mo, mo->info->seestate);
+         else
+            P_SetMobjState(mo, mo->info->spawnstate);
+         mo->intflags &= ~MIF_SKULLFLYSEE;
       }
 
       return;
@@ -542,7 +573,7 @@ void P_XYMovement(Mobj* mo)
             (mo->flags & MF_BOUNCES ||
              (!player && clip.blockline &&
               variable_friction && mo->z <= mo->zref.floor &&
-              P_GetFriction(mo, NULL) > ORIG_FRICTION)))
+              P_GetFriction(mo, nullptr) > ORIG_FRICTION)))
          {
             if (clip.blockline)
             {
@@ -572,7 +603,8 @@ void P_XYMovement(Mobj* mo)
                mo->momx = mo->momy = 0;
             }
          }
-         else if(demo_version <= 203 ? !!player : !!(mo->flags3 & MF3_SLIDE)) // haleyjd: SLIDE flag
+         // VANILLA_HERETIC: SLIDE also supported here.
+         else if(demo_version <= 203 && !vanilla_heretic ? !!player : !!(mo->flags3 & MF3_SLIDE)) // haleyjd: SLIDE flag
          {
             // Checking against "player" is still needed for MBF and lower demo
             // compatibility. Relevant for respawned players' old corpses.
@@ -625,7 +657,7 @@ void P_XYMovement(Mobj* mo)
                   R_IsSkyLikePortalCeiling(*clip.ceilingline->backsector))))
             {
                if (demo_compatibility ||  // killough
-                  mo->z > clip.ceilingline->backsector->ceilingheight)
+                  mo->z > clip.ceilingline->backsector->srf.ceiling.height)
                {
                   // Hack to prevent missiles exploding against the sky.
                   // Does not handle sky floors.
@@ -678,8 +710,7 @@ void P_XYMovement(Mobj* mo)
    // haleyjd: OVER_UNDER
    // 06/5/12: flying players
    // 2017/09/09: players when air friction is active
-   if(mo->z > mo->zref.floor && !(mo->flags4 & MF4_FLY) &&
-      (!P_Use3DClipping() || !(mo->intflags & MIF_ONMOBJ)) &&
+   if(!P_OnGroundOrThing(*mo) && !(mo->flags4 & MF4_FLY) &&
       (!mo->player || LevelInfo.airFriction == 0))
    {
       return;
@@ -693,7 +724,7 @@ void P_XYMovement(Mobj* mo)
        mo->flags & MF_CORPSE || mo->intflags & MIF_FALLING) &&
       (mo->momx > FRACUNIT/4 || mo->momx < -FRACUNIT/4 ||
        mo->momy > FRACUNIT/4 || mo->momy < -FRACUNIT/4) &&
-      mo->zref.floor != P_ExtremeSectorAtPoint(mo, false)->floorheight)
+      mo->zref.floor != P_ExtremeSectorAtPoint(mo, surf_floor)->srf.floor.height)
       return;  // do not stop sliding if halfway off a step with some momentum
 
    // Some objects never rest on other things
@@ -724,8 +755,8 @@ void P_XYMovement(Mobj* mo)
    }
    else
    {
-      // BOOM friction compatibility 
-      if(demo_version <= 201)
+      // BOOM friction compatibility
+      if(demo_version <= 201 && !vanilla_heretic)
       {
          // phares 3/17/98
          // Friction will have been adjusted by friction thinkers for icy
@@ -735,7 +766,7 @@ void P_XYMovement(Mobj* mo)
          mo->momy = FixedMul(mo->momy, mo->friction);
          mo->friction = ORIG_FRICTION; // reset to normal for next tic
       }
-      else if(demo_version <= 202)
+      else if(demo_version <= 202 && !vanilla_heretic)
       {
          // phares 9/10/98: reduce bobbing/momentum when on ice & up against wall
 
@@ -757,7 +788,7 @@ void P_XYMovement(Mobj* mo)
       }
       else
       {
-         fixed_t friction = P_GetFriction(mo, NULL);
+         fixed_t friction = P_GetFriction(mo, nullptr);
 
          if(friction != FRACUNIT)
          {
@@ -800,7 +831,7 @@ void P_PlayerHitFloor(Mobj *mo, bool onthing)
    // haleyjd 05/09/99 no oof when dead :)
    if(demo_version < 329 || mo->health > 0)
    {
-      if(!comp[comp_fallingdmg] && demo_version >= 329)
+      if(!getComp(comp_fallingdmg) && demo_version >= 329)
       {
          // new features -- feet sound for normal hits,
          // grunt for harder, falling damage for worse
@@ -846,7 +877,7 @@ static void P_ZMovement(Mobj* mo)
    else if(demo_version < 331) // BOOM - EE v3.29
       correct_lost_soul_bounce = true;
    else // from now on...
-      correct_lost_soul_bounce = !comp[comp_soul];
+      correct_lost_soul_bounce = !getComp(comp_soul);
 
    // killough 7/11/98:
    // BFG fireballs bounced on floors and ceilings in Pre-Beta Doom
@@ -880,7 +911,7 @@ static void P_ZMovement(Mobj* mo)
             // killough 11/98: touchy objects explode on impact
             if (mo->flags & MF_TOUCHY && mo->intflags & MIF_ARMED &&
                mo->health > 0)
-               P_DamageMobj(mo, NULL, NULL, mo->health,MOD_UNKNOWN);
+               P_DamageMobj(mo, nullptr, nullptr, mo->health,MOD_UNKNOWN);
             else if (mo->flags & MF_FLOAT && sentient(mo))
                goto floater;
             return;
@@ -936,7 +967,7 @@ static void P_ZMovement(Mobj* mo)
       {
          if(clip.ceilingline &&
             clip.ceilingline->backsector &&
-            (mo->z > clip.ceilingline->backsector->ceilingheight) &&
+            (mo->z > clip.ceilingline->backsector->srf.ceiling.height) &&
             (clip.ceilingline->backsector->intflags & SIF_SKY ||
             (demo_version >= 342 &&
                clip.ceilingline->extflags & EX_ML_UPPERPORTAL &&
@@ -980,19 +1011,25 @@ floater:
       mo->target)     // killough 11/98: simplify
    {
       fixed_t delta;
-#ifdef R_LINKEDPORTALS
       if(P_AproxDistance(mo->x - getTargetX(mo), mo->y - getTargetY(mo)) <
          D_abs(delta = getTargetZ(mo) + (mo->height>>1) - mo->z)*3)
-#else
-      if(P_AproxDistance(mo->x - mo->target->x, mo->y - mo->target->y) <
-         D_abs(delta = mo->target->z + (mo->height>>1) - mo->z)*3)
-#endif
+      {
          mo->z += delta < 0 ? -FLOATSPEED : FLOATSPEED;
+      }
    }
 
    // haleyjd 06/05/12: flying players
+   // VANILLA_HERETIC: jerky flying player motion
    if(mo->player && mo->flags4 & MF4_FLY && mo->z > mo->zref.floor)
-      mo->z += finesine[(FINEANGLES / 80 * leveltime) & FINEMASK] / 8;
+   {
+      if(vanilla_heretic)
+      {
+         if(leveltime & 2)
+            mo->z += finesine[(FINEANGLES / 20 * leveltime >> 2) & FINEMASK];
+      }
+      else
+         mo->z += finesine[(FINEANGLES / 80 * leveltime) & FINEMASK] / 8;
+   }
 
    // clip movement
 
@@ -1015,7 +1052,7 @@ floater:
          // killough 11/98: touchy objects explode on impact
          if(mo->flags & MF_TOUCHY && mo->intflags & MIF_ARMED &&
             mo->health > 0)
-            P_DamageMobj(mo, NULL, NULL, mo->health, MOD_UNKNOWN);
+            P_DamageMobj(mo, nullptr, nullptr, mo->health, MOD_UNKNOWN);
          else if(mo->player && // killough 5/12/98: exclude voodoo dolls
                  mo->player->mo == mo &&
                  mo->momz < -LevelInfo.gravity*8)
@@ -1025,6 +1062,7 @@ floater:
          mo->momz = 0;
       }
 
+      fixed_t oldz = mo->z;
       mo->z = mo->zref.floor;
 
       if(moving_down && initial_mo_z != mo->zref.floor)
@@ -1040,7 +1078,7 @@ floater:
          mo->momz = -mo->momz;
 
 
-      if(!((mo->flags ^ MF_MISSILE) & (MF_MISSILE | MF_NOCLIP)))
+      if(mo->flags & MF_MISSILE && !(mo->flags & MF_NOCLIP))
       {
          if(mo->flags4 & MF4_HERETICBOUNCES) // MaxW
          {
@@ -1053,6 +1091,13 @@ floater:
             return;
          }
          return;
+      }
+      // VANILLA_HERETIC: crash bug emulation here
+      // Also make sure it happens under the same conditions on coming here
+      if(vanilla_heretic && mo->info->crashstate != NullStateNum && mo->flags & MF_CORPSE &&
+         oldz != mo->z)
+      {
+         P_SetMobjState(mo, mo->info->crashstate);
       }
    }
    else if(mo->flags4 & MF4_FLY)
@@ -1118,7 +1163,7 @@ void P_NightmareRespawn(Mobj* mobj)
    y = mobj->spawnpoint.y;
 
    // stupid nightmare respawning bug fix
-   if(!comp[comp_respawnfix] && demo_version >= 329 && x == 0 && y == 0)
+   if(!getComp(comp_respawnfix) && demo_version >= 329 && x == 0 && y == 0)
    {
       // spawnpoint was zeroed out, so use point of death instead
       x = mobj->x;
@@ -1138,7 +1183,7 @@ void P_NightmareRespawn(Mobj* mobj)
       subsector_t *newsubsec = R_PointInSubsector(x, y);
 
       fixed_t sheight = mobj->height;
-      fixed_t tz      = newsubsec->sector->floorheight + mobj->spawnpoint.height;
+      fixed_t tz      = newsubsec->sector->srf.floor.height + mobj->spawnpoint.height;
 
       // need to restore real height before checking
       mobj->height = P_ThingInfoHeight(mobj->info);
@@ -1159,7 +1204,7 @@ void P_NightmareRespawn(Mobj* mobj)
    // spawn a teleport fog at old spot
    // because of removal of the body?
    mo = P_SpawnMobj(mobj->x, mobj->y,
-                    P_ExtremeSectorAtPoint(mobj, false)->floorheight +
+                    P_ExtremeSectorAtPoint(mobj, surf_floor)->srf.floor.height +
                        GameModeInfo->teleFogHeight,
                     E_SafeThingName(GameModeInfo->teleFogType));
 
@@ -1169,7 +1214,7 @@ void P_NightmareRespawn(Mobj* mobj)
    // spawn a teleport fog at the new spot
    ss = R_PointInSubsector(x, y);
    mo = P_SpawnMobj(x, y,
-                    ss->sector->floorheight + GameModeInfo->teleFogHeight,
+                    ss->sector->srf.floor.height + GameModeInfo->teleFogHeight,
                     E_SafeThingName(GameModeInfo->teleFogType));
 
    S_StartSound(mo, GameModeInfo->teleSound);
@@ -1202,11 +1247,12 @@ void P_NightmareRespawn(Mobj* mobj)
 //
 // The mobj is already assumed to be sunk into the sector portal.
 //
-static void P_avoidPortalEdges(Mobj &mobj, bool isceiling,
-                               const line_t *&crossedge)
+// Returns the line that gets crossed by interpolation, if any.
+//
+static const line_t *P_avoidPortalEdges(Mobj &mobj, surf_e surf)
 {
    const sector_t &sector = *mobj.subsector->sector;
-   unsigned flag = isceiling ? EX_ML_UPPERPORTAL : EX_ML_LOWERPORTAL;
+   unsigned flag = e_edgePortalFlags[surf];
 
    fixed_t box[4];
 
@@ -1216,7 +1262,7 @@ static void P_avoidPortalEdges(Mobj &mobj, bool isceiling,
    box[BOXRIGHT] = displace.x + AVOID_EDGE_PORTAL_RANGE;
    box[BOXTOP] = displace.y + AVOID_EDGE_PORTAL_RANGE;
 
-   crossedge = nullptr;
+   const line_t *crossedge = nullptr;
 
    for(int i = 0; i < sector.linecount; ++i)
    {
@@ -1229,7 +1275,7 @@ static void P_avoidPortalEdges(Mobj &mobj, bool isceiling,
          mobj.y - mobj.prevpos.y };
 
       if(P_LineIsCrossed(line, dl) == 0)
-         crossedge = &line;  // TODO
+         crossedge = &line;
 
       // line must be an edge portal with its back towards the sector.
       // The thing's centre must be very close to the line
@@ -1250,6 +1296,8 @@ static void P_avoidPortalEdges(Mobj &mobj, bool isceiling,
    }
    if(displace.x != mobj.x || displace.y != mobj.y)
       P_TryMove(&mobj, displace.x, displace.y, 1);
+
+   return crossedge;
 }
 
 //
@@ -1257,51 +1305,21 @@ static void P_avoidPortalEdges(Mobj &mobj, bool isceiling,
 //
 bool P_CheckPortalTeleport(Mobj *mobj)
 {
-   struct opset_t
-   {
-      unsigned sector_t::* pflags;
-      fixed_t (*portalzfunc)(const sector_t &);
-      bool (*comparison)(fixed_t, fixed_t);
-      linkdata_t *(*plink)(const sector_t *);
-      bool isceiling;
-   };
-
-   static const opset_t opsets[2] =
-   {
-      {
-         &sector_t::f_pflags,
-         P_FloorPortalZ,
-         [](fixed_t a, fixed_t b) { return a < b; },
-         R_FPLink,
-         false
-      },
-      {
-         &sector_t::c_pflags,
-         P_CeilingPortalZ,
-         [](fixed_t a, fixed_t b) { return a >= b; },
-         R_CPLink,
-         true
-      }
-   };
-
    static const int MAXIMUM_PER_TIC = 8;  // set some limit for maximum portals to cross per tic
 
    bool movedalready = false;
 
-   for(int i = 0; i < earrlen(opsets); ++i)
+   for(surf_e surf : SURFS)
    {
       if(movedalready)
          return true;   // if moved from the previous plane attempt, signal success now
-
-      const auto &op = opsets[i];
-
       for(int j = 0; j < MAXIMUM_PER_TIC; ++j)  // allow checking if multiple portals were passed
       {
          const sector_t *sector = mobj->subsector->sector;
-         if(!(sector->*op.pflags & PS_PASSABLE))
+         const surface_t &surface = sector->srf[surf];
+         if(!(surface.pflags & PS_PASSABLE))
             break;
          fixed_t passheight, prevpassheight;
-
          if(mobj->player)
          {
             P_CalcHeight(mobj->player);
@@ -1315,34 +1333,36 @@ bool P_CheckPortalTeleport(Mobj *mobj)
          }
 
          // ioanch 20160109: link offset outside
-         fixed_t planez = op.portalzfunc(*sector);
-         if(op.comparison(passheight, planez))
+         fixed_t planez = P_PortalZ(surface);
+         if(isOuter(surf, passheight, planez))
          {
-            const line_t *crossedge;
-            P_avoidPortalEdges(*mobj, op.isceiling, crossedge);
-            const linkdata_t *ldata = op.plink(sector);
+            const line_t *crossedge = P_avoidPortalEdges(*mobj, surf);
+            const linkdata_t &ldata = surface.portal->data.link;
             if(!j)
             {
-               mobj->prevpos.ldata = ldata;
-               if(op.comparison(prevpassheight, planez))
+               mobj->prevpos.portalsurface = &surface;
+               mobj->prevpos.ldata = &ldata;
+               if(isOuter(surf, prevpassheight, planez))
                   mobj->prevpos.portalline = crossedge;
             }
-            EV_SectorPortalTeleport(mobj, ldata->deltax, ldata->deltay,
-                                    ldata->deltaz, ldata->fromid, ldata->toid);
-            if(j)
+            EV_SectorPortalTeleport(mobj, ldata);
+
+            // FIXME: remove the attached-portal hack and implement correct interpolation through
+            // moving sector portal.
+            if(j || surface.pflags & PF_ATTACHEDPORTAL)
             {
                mobj->backupPosition();
                if(mobj->player)
                   mobj->player->prevviewz = mobj->player->viewz;
             }
-            movedalready = true; // signal not to attempt moving down now
+            movedalready = true;  // signal not to attempt moving the other way now
          }
          else
             break;   // break out of the eight-attempt if there's no portal now
       }
    }
 
-   return false;
+   return movedalready;
 }
 
 //
@@ -1352,7 +1372,7 @@ bool Mobj::shouldApplyTorque()
 {
    if(demo_version < 203)
       return false; // never in old demos
-   if(comp[comp_falloff] && !(flags4 & MF4_ALWAYSTORQUE))
+   if(getComp(comp_falloff) && !(flags4 & MF4_ALWAYSTORQUE))
       return false; // torque is disabled
    if(flags & MF_NOGRAVITY  ||
       flags2 & MF2_FLOATBOB ||
@@ -1412,14 +1432,14 @@ void Mobj::Think()
    // removed old code which looked at target references
    // (we use pointer reference counting now)
 
-   clip.BlockingMobj = NULL;
+   clip.BlockingMobj = nullptr;
 
    // haleyjd 08/07/04: handle deep water plane hits
    if(subsector->sector->heightsec != -1)
    {
       sector_t *hs = &sectors[subsector->sector->heightsec];
 
-      waterstate = (z < hs->floorheight);
+      waterstate = (z < hs->srf.floor.height);
    }
 
    // Heretic Wind transfer specials
@@ -1432,7 +1452,7 @@ void Mobj::Think()
    }
 
    // momentum movement
-   clip.BlockingMobj = NULL;
+   clip.BlockingMobj = nullptr;
    if(momx | momy || flags & MF_SKULLFLY)
    {
       P_XYMovement(this);
@@ -1441,7 +1461,7 @@ void Mobj::Think()
    }
 
    if(!P_Use3DClipping())
-      clip.BlockingMobj = NULL;
+      clip.BlockingMobj = nullptr;
 
    lz = z;
 
@@ -1541,7 +1561,8 @@ void Mobj::Think()
    P_CheckPortalTeleport(this);
 
    // handle crashstate here
-   if(info->crashstate != NullStateNum
+   // VANILLA_HERETIC: move this check into Z_Movement.
+   if(!vanilla_heretic && info->crashstate != NullStateNum
       && flags & MF_CORPSE
       && !(intflags & MIF_CRASHED)
       && z <= zref.floor)
@@ -1557,7 +1578,7 @@ void Mobj::Think()
    {
       sector_t *hs = &sectors[subsector->sector->heightsec];
 
-      waterstate = (z < hs->floorheight);
+      waterstate = (z < hs->srf.floor.height);
    }
    else
       waterstate = 0;
@@ -1579,7 +1600,8 @@ void Mobj::Think()
 
    if(tics != -1) // you can cycle through multiple states in a tic
    {
-      if(!--tics)
+      if(((tics == 0) && (state->flags & STATEFI_DECORATE) &&
+          !(state->flags & STATEFI_VANILLA0TIC)) || !--tics)
          P_SetMobjState(this, state->nextstate);
    }
    else
@@ -1720,7 +1742,7 @@ void Mobj::serialize(SaveArchive &arc)
          if(info->altsprite != -1)
             skin = P_GetMonsterSkin(info->altsprite);
          else
-            skin = NULL;
+            skin = nullptr;
       }
 
       backupPosition();
@@ -1760,7 +1782,7 @@ void Mobj::deSwizzle()
 
    // Done with the deswizzle info structure.
    efree(dsInfo);
-   dsInfo = NULL;
+   dsInfo = nullptr;
 }
 
 //
@@ -1803,6 +1825,7 @@ void Mobj::backupPosition()
    prevpos.angle = angle; // NB: only used for player objects
    prevpos.portalline = nullptr;
    prevpos.ldata = nullptr;
+   prevpos.portalsurface = nullptr;
 }
 
 //
@@ -1819,8 +1842,8 @@ void Mobj::copyPosition(const Mobj *other)
    groupid    = other->groupid;
    zref       = other->zref;
 
-   intflags  &= ~(MIF_ONFLOOR|MIF_ONSECFLOOR|MIF_ONMOBJ);
-   intflags  |= (other->intflags & (MIF_ONFLOOR|MIF_ONSECFLOOR|MIF_ONMOBJ));
+   intflags  &= ~MIF_ONMOBJ;
+   intflags  |= (other->intflags & MIF_ONMOBJ);
 }
 
 //
@@ -1843,7 +1866,8 @@ extern fixed_t tmsecceilz;
 //
 // P_SpawnMobj
 //
-Mobj *P_SpawnMobj(fixed_t x, fixed_t y, fixed_t z, mobjtype_t type)
+Mobj *P_SpawnMobj(fixed_t x, fixed_t y, fixed_t z, mobjtype_t type,
+                  bool nolastlook)
 {
    Mobj       *mobj = new Mobj;
    mobjinfo_t *info = mobjinfo[type];
@@ -1862,9 +1886,7 @@ Mobj *P_SpawnMobj(fixed_t x, fixed_t y, fixed_t z, mobjtype_t type)
    mobj->effects = info->particlefx; // haleyjd 07/13/03
    mobj->damage  = info->damage;     // haleyjd 08/02/04
 
-#ifdef R_LINKEDPORTALS
    mobj->groupid = R_NOGROUP;
-#endif
 
    // haleyjd 09/26/04: rudimentary support for monster skins
    if(info->altsprite != -1)
@@ -1908,7 +1930,8 @@ Mobj *P_SpawnMobj(fixed_t x, fixed_t y, fixed_t z, mobjtype_t type)
    if(gameskill != sk_nightmare)
       mobj->reactiontime = info->reactiontime;
 
-   mobj->lastlook = P_Random(pr_lastlook) % MAXPLAYERS;
+   if(!nolastlook)
+      mobj->lastlook = P_Random(pr_lastlook) % MAXPLAYERS;
    M_RandomLog("type=%d\n", info->dehnum - 1);
 
    // do not set the state with P_SetMobjState,
@@ -1934,8 +1957,10 @@ Mobj *P_SpawnMobj(fixed_t x, fixed_t y, fixed_t z, mobjtype_t type)
 
    // killough 11/98: for tracking dropoffs
    // ioanch 20160201: fix zref.floor and zref.ceiling to be portal-aware
-   mobj->zref.dropoff = mobj->zref.floor = P_ExtremeSectorAtPoint(mobj, false)->floorheight;
-   mobj->zref.ceiling = P_ExtremeSectorAtPoint(mobj, true)->ceilingheight;
+   const sector_t *extremesector = P_ExtremeSectorAtPoint(mobj, surf_floor);
+   mobj->zref.dropoff = mobj->zref.floor = extremesector->srf.floor.height;
+   mobj->zref.floorgroupid = extremesector->groupid;
+   mobj->zref.ceiling = P_ExtremeSectorAtPoint(mobj, surf_ceil)->srf.ceiling.height;
 
    mobj->z = 
       (z == ONFLOORZ ? mobj->zref.floor : z == ONCEILINGZ ? mobj->zref.ceiling - mobj->height : z);
@@ -2053,7 +2078,7 @@ void Mobj::remove()
    if(demo_version > 337)
    {
       this->flags |= (MF_NOSECTOR | MF_NOBLOCKMAP);
-      this->old_sectorlist = NULL; 
+      this->old_sectorlist = nullptr; 
    }
 
    // killough 11/98: Remove any references to other mobjs.
@@ -2062,9 +2087,9 @@ void Mobj::remove()
    // current tic.
    if(demo_version >= 203)
    {
-      P_SetTarget<Mobj>(&this->target,    NULL);
-      P_SetTarget<Mobj>(&this->tracer,    NULL);
-      P_SetTarget<Mobj>(&this->lastenemy, NULL);
+      P_SetTarget<Mobj>(&this->target,    nullptr);
+      P_SetTarget<Mobj>(&this->tracer,    nullptr);
+      P_SetTarget<Mobj>(&this->lastenemy, nullptr);
    }
 
    // remove from thinker list
@@ -2083,9 +2108,13 @@ int P_FindDoomedNum(int type)
    static struct dnumhash_s { int first, next; } *hash;
    int i;
 
+   // Negative type would crash otherwise.
+   if(type < 0)
+      return -1;
+
    if(!hash)
    {
-      hash = (dnumhash_s *)(Z_Malloc(sizeof(*hash) * NUMMOBJTYPES, PU_CACHE, (void **)&hash));
+      hash = emalloctag(dnumhash_s *, sizeof(*hash) * NUMMOBJTYPES, PU_CACHE, (void **)&hash);
       for(i = 0; i < NUMMOBJTYPES; i++)
          hash[i].first = NUMMOBJTYPES;
       for(i = 0; i < NUMMOBJTYPES; i++)
@@ -2128,7 +2157,7 @@ void P_RespawnSpecials()
 
    // spawn a teleport fog at the new spot
    ss = R_PointInSubsector(x,y);
-   mo = P_SpawnMobj(x, y, ss->sector->floorheight , E_SafeThingType(MT_IFOG));
+   mo = P_SpawnMobj(x, y, ss->sector->srf.floor.height, E_SafeThingType(MT_IFOG));
    S_StartSound(mo, sfx_itmbk);
 
    // find which type to spawn
@@ -2311,12 +2340,18 @@ Mobj *P_SpawnMapThing(mapthing_t *mthing)
    }
 
    // haleyjd: now handled through IN_AddCameras
-   // return NULL for old demos
+   // return nullptr for old demos
    if(mthing->type == 5003 && demo_version < 331)
+      return nullptr;
+
+   // if vanilla, do it like Chocolate-Doom which deems it safe to silently ignore negative
+   // doomednums
+   if(demo_compatibility && mthing->type <= 0)
       return nullptr;
 
    // check for players specially
 
+   bool norandomcall = false;
    if(mthing->type <= 4 && mthing->type > 0) // killough 2/26/98 -- fix crashes
    {
       // killough 7/19/98: Marine's best friend :)
@@ -2395,7 +2430,11 @@ Mobj *P_SpawnMapThing(mapthing_t *mthing)
    // below must be caught here
 
    if(mthing->type >= 1200 && mthing->type < 1300)         // enviro sequences
+   {
       i = E_SafeThingName("EEEnviroSequence");
+      // VANILLA_HERETIC: critical. Same as below
+      norandomcall = vanilla_heretic;
+   }
    else if(mthing->type >= 1400 && mthing->type < 1500)    // sector sequence
       i = E_SafeThingName("EESectorSequence");
    else if(mthing->type >= 9027 && mthing->type <= 9033)   // particle fountains
@@ -2408,6 +2447,8 @@ Mobj *P_SpawnMapThing(mapthing_t *mthing)
    {
       // killough 8/23/98: use table for faster lookup
       i = P_FindDoomedNum(mthing->type);
+      if(mthing->type == 7056)
+         norandomcall = vanilla_heretic;
    }
 
    // phares 5/16/98:
@@ -2425,7 +2466,14 @@ Mobj *P_SpawnMapThing(mapthing_t *mthing)
                      M_FixedToDouble(mthing->y));
       }
       else
+      {
+         // Still print the error, but only at console
+         C_Printf(FC_ERROR "Unknown thing type %d at (%.2f, %.2f)",
+            mthing->type,
+            M_FixedToDouble(mthing->x),
+            M_FixedToDouble(mthing->y));
          UnknownThings.add(*mthing);
+      }
 
        return nullptr;
    }
@@ -2459,7 +2507,7 @@ spawnit:
    if(mobjinfo[i]->flags2 & MF2_SPAWNFLOAT)
       z = FLOATRANDZ;
 
-   mobj = P_SpawnMobj(x, y, z, i);
+   mobj = P_SpawnMobj(x, y, z, i, norandomcall);
 
    // haleyjd 10/03/05: Hexen-format mapthing support
    
@@ -3105,9 +3153,7 @@ Mobj *P_SpawnPlayerMissile(Mobj* source, mobjtype_t type, unsigned flags,
       int mask = demo_version < 203 ? false : true;
       bool hadmask = !!mask;
       // Aspiratory Heretic demo support
-      bool hereticdemo = ancient_demo && GameModeInfo->type == Game_Heretic;
-
-      bool avoidfriendsideaim = demo_version >= 401 || hereticdemo;
+      bool avoidfriendsideaim = demo_version >= 401;
       do
       {
          slope = P_AimLineAttack(source, an, 16*64*FRACUNIT, mask);
@@ -3201,9 +3247,7 @@ Mobj *P_SpawnPlayerMissileAngleHeretic(Mobj *source, mobjtype_t type, angle_t an
    if(autoaim)
    {
       // ioanch: reuse killough's code from P_SpawnPlayerMissile
-      // Aspiratory Heretic demo support
-      bool hereticdemo = ancient_demo && GameModeInfo->type == Game_Heretic;
-      int mask = demo_version < 203 && !hereticdemo ? false : true;
+      int mask = demo_version < 203 ? false : true;
       bool hadmask = !!mask;  // mark if the mask was set initially
       do
       {
@@ -3220,7 +3264,8 @@ Mobj *P_SpawnPlayerMissileAngleHeretic(Mobj *source, mobjtype_t type, angle_t an
             }
          }
          else
-            clip.linetarget = nullptr;
+            P_ClearTarget(clip.linetarget);
+
          if(!clip.linetarget)
          {
             an = angle;
@@ -3305,7 +3350,7 @@ void P_Massacre(int friends)
             break;
          }
          mo->flags2 &= ~MF2_INVULNERABLE; // haleyjd 04/09/99: none of that!
-         P_DamageMobj(mo, NULL, NULL, 10000, MOD_UNKNOWN);
+         P_DamageMobj(mo, nullptr, nullptr, GOD_BREACH_DAMAGE, MOD_UNKNOWN);
       }
    }
 }
@@ -3320,7 +3365,7 @@ void P_FallingDamage(player_t *player)
    dist = FixedMul(mom, 16*FRACUNIT/23);
 
    if(mom > 63*FRACUNIT)
-      damage = 10000; // instant death
+      damage = GOD_BREACH_DAMAGE; // instant death
    else
       damage = ((FixedMul(dist, dist)/10)>>FRACBITS)-24;
 
@@ -3336,7 +3381,7 @@ void P_FallingDamage(player_t *player)
    if(damage >= player->mo->health)
       player->mo->intflags |= MIF_DIEDFALLING;
 
-   P_DamageMobj(player->mo, NULL, NULL, damage, MOD_FALLING);
+   P_DamageMobj(player->mo, nullptr, nullptr, damage, MOD_FALLING);
 }
 
 //
@@ -3352,7 +3397,7 @@ void P_AdjustFloorClip(Mobj *thing)
    const msecnode_t *m;
 
    // absorb test for FOOTCLIP flag here
-   if(comp[comp_terrain] || !(thing->flags2 & MF2_FOOTCLIP))
+   if(getComp(comp_terrain) || !(thing->flags2 & MF2_FOOTCLIP))
    {
       thing->floorclip = 0;
       return;
@@ -3363,7 +3408,7 @@ void P_AdjustFloorClip(Mobj *thing)
    for(m = thing->touching_sectorlist; m; m = m->m_tnext)
    {
       if(m->m_sector->heightsec == -1 &&
-         thing->z == m->m_sector->floorheight)
+         thing->z == m->m_sector->srf.floor.height)
       {
          fixed_t fclip = E_SectorFloorClip(m->m_sector);
 
@@ -3397,7 +3442,7 @@ void P_AdjustFloorClip(Mobj *thing)
 int P_ThingInfoHeight(const mobjinfo_t *mi)
 {
    return
-      ((demo_version >= 333 && !comp[comp_theights] &&
+      ((demo_version >= 333 && !getComp(comp_theights) &&
        mi->c3dheight) ?
        mi->c3dheight : mi->height);
 }
@@ -3459,8 +3504,8 @@ void P_AddThingTID(Mobj *mo, int tid)
    if(tid <= 0)
    {
       mo->tid = 0;
-      mo->tid_next = NULL;
-      mo->tid_prevn = NULL;
+      mo->tid_next = nullptr;
+      mo->tid_prevn = nullptr;
    }
    else
    {
@@ -3506,7 +3551,7 @@ void P_RemoveThingTID(Mobj *mo)
 //
 // Like line and sector tag search functions, this function will
 // keep returning the next object with the same tid when called
-// repeatedly with the previous call's return value. Returns NULL
+// repeatedly with the previous call's return value. Returns nullptr
 // once the end of the chain is hit. Calling it again at that point
 // would restart the search from the base of the chain.
 //
@@ -3531,8 +3576,8 @@ Mobj *P_FindMobjFromTID(int tid, Mobj *rover, Mobj *trigger)
    // Reserved TIDs
    switch(tid)
    {
-   case 0:   // script trigger object (may be NULL, which is fine)
-      return !rover ? trigger : NULL;
+   case 0:   // script trigger object (may be nullptr, which is fine)
+      return !rover ? trigger : nullptr;
 
    case -1:  // players are -1 through -4
    case -2:
@@ -3541,11 +3586,11 @@ Mobj *P_FindMobjFromTID(int tid, Mobj *rover, Mobj *trigger)
       {
          int pnum = -tid - 1;
 
-         return !rover && playeringame[pnum] ? players[pnum].mo : NULL;
+         return !rover && playeringame[pnum] ? players[pnum].mo : nullptr;
       }
 
    default:
-      return NULL;
+      return nullptr;
    }
 }
 
@@ -3577,7 +3622,7 @@ void MobjFadeThinker::setTarget(Mobj *pTarget)
 //
 void MobjFadeThinker::remove()
 {
-   P_SetTarget<Mobj>(&target, NULL); // clear reference to parent Mobj
+   P_SetTarget<Mobj>(&target, nullptr); // clear reference to parent Mobj
    Super::remove();           // call parent implementation
 }
 
@@ -3661,7 +3706,7 @@ void MobjFadeThinker::deSwizzle()
 //
 void P_StartMobjFade(Mobj *mo, int alphavelocity)
 {
-   MobjFadeThinker *mf = NULL;
+   MobjFadeThinker *mf = nullptr;
    Thinker *cap = &thinkerclasscap[th_misc];
 
    for(Thinker *th = cap->cnext; th != cap; th = th->cnext)
@@ -3670,7 +3715,7 @@ void P_StartMobjFade(Mobj *mo, int alphavelocity)
          break; // found one
 
       // keep looking
-      mf = NULL;
+      mf = nullptr;
    }
 
    if(!mf && alphavelocity != 0) // not one? spawn it now.
@@ -3753,7 +3798,7 @@ static cell AMX_NATIVE_CALL sm_thingspawnspot(AMX *amx, cell *params)
 {
    int type, spottid, tid, ang;
    angle_t angle;
-   Mobj *mo, *spawnspot = NULL;
+   Mobj *mo, *spawnspot = nullptr;
    SmallContext_t *context = SM_GetContextForAMX(amx);
 
    if(gamestate != GS_LEVEL)
@@ -3804,7 +3849,7 @@ static cell AMX_NATIVE_CALL sm_thingsound(AMX *amx, cell *params)
 {
    int err, tid;
    char *sndname;
-   Mobj *mo = NULL;
+   Mobj *mo = nullptr;
    SmallContext_t *context = SM_GetContextForAMX(amx);
 
    if(gamestate != GS_LEVEL)
@@ -3838,7 +3883,7 @@ static cell AMX_NATIVE_CALL sm_thingsound(AMX *amx, cell *params)
 static cell AMX_NATIVE_CALL sm_thingsoundnum(AMX *amx, cell *params)
 {
    int tid, sndnum;
-   Mobj *mo = NULL;
+   Mobj *mo = nullptr;
    SmallContext_t *context = SM_GetContextForAMX(amx);
 
    if(gamestate != GS_LEVEL)
@@ -3868,7 +3913,7 @@ static cell AMX_NATIVE_CALL sm_thingsoundnum(AMX *amx, cell *params)
 static cell AMX_NATIVE_CALL sm_thinginfosound(AMX *amx, cell *params)
 {
    int tid, typenum;
-   Mobj *mo = NULL;
+   Mobj *mo = nullptr;
    SmallContext_t *context = SM_GetContextForAMX(amx);
 
    if(gamestate != GS_LEVEL)
@@ -3947,7 +3992,7 @@ enum
 static cell AMX_NATIVE_CALL sm_thinggetproperty(AMX *amx, cell *params)
 {
    int value = 0, field, tid;
-   Mobj *mo = NULL;
+   Mobj *mo = nullptr;
    SmallContext_t *context = SM_GetContextForAMX(amx);
 
    if(gamestate != GS_LEVEL)
@@ -3985,7 +4030,7 @@ static cell AMX_NATIVE_CALL sm_thinggetproperty(AMX *amx, cell *params)
 static cell AMX_NATIVE_CALL sm_thingsetproperty(AMX *amx, cell *params)
 {
    int field, value, tid;
-   Mobj *mo = NULL;
+   Mobj *mo = nullptr;
    SmallContext_t *context = SM_GetContextForAMX(amx);
 
    if(gamestate != GS_LEVEL)
@@ -4020,7 +4065,7 @@ static cell AMX_NATIVE_CALL sm_thingflagsstr(AMX *amx, cell *params)
    int     tid, op, err;
    char   *flags;
    int    *results;
-   Mobj *mo = NULL;
+   Mobj *mo = nullptr;
    SmallContext_t *context = SM_GetContextForAMX(amx);
 
    if(gamestate != GS_LEVEL)
@@ -4078,7 +4123,7 @@ static cell AMX_NATIVE_CALL sm_thingflagsstr(AMX *amx, cell *params)
 static cell AMX_NATIVE_CALL sm_thingsetfriend(AMX *amx, cell *params)
 {
    int tid, friendly;
-   Mobj *mo = NULL;
+   Mobj *mo = nullptr;
    SmallContext_t *context = SM_GetContextForAMX(amx);
 
    if(gamestate != GS_LEVEL)
@@ -4119,7 +4164,7 @@ static cell AMX_NATIVE_CALL sm_thingisfriend(AMX *amx, cell *params)
 {
    int tid;
    bool friendly = false;
-   Mobj *mo = NULL;
+   Mobj *mo = nullptr;
    SmallContext_t *ctx = SM_GetContextForAMX(amx);
 
    if(gamestate != GS_LEVEL)
@@ -4146,7 +4191,7 @@ static cell AMX_NATIVE_CALL sm_thingthrust3f(AMX *amx, cell *params)
 {
    int tid;
    fixed_t x, y, z;
-   Mobj *mo = NULL;
+   Mobj *mo = nullptr;
    SmallContext_t *context = SM_GetContextForAMX(amx);
 
    if(gamestate != GS_LEVEL)
@@ -4178,7 +4223,7 @@ static cell AMX_NATIVE_CALL sm_thingthrust3f(AMX *amx, cell *params)
 //
 static cell AMX_NATIVE_CALL sm_thingthrust(AMX *amx, cell *params)
 {
-   Mobj  *mo   = NULL;
+   Mobj  *mo   = nullptr;
    angle_t angle = FixedToAngle((fixed_t)params[1]);
    fixed_t force = (fixed_t)params[2];
    int     tid   = params[3];
@@ -4217,7 +4262,7 @@ enum
 static cell AMX_NATIVE_CALL sm_thinggetpos(AMX *amx, cell *params)
 {
    int tid, valuetoget;
-   Mobj *mo = NULL;
+   Mobj *mo = nullptr;
    SmallContext_t *context = SM_GetContextForAMX(amx);
 
    if(gamestate != GS_LEVEL)
@@ -4276,7 +4321,7 @@ static cell AMX_NATIVE_CALL sm_getfreetid(AMX *amx, cell *params)
 
    for(tid = 1; tid <= 65535; ++tid)
    {
-      if(P_FindMobjFromTID(tid, NULL, NULL) == NULL)
+      if(P_FindMobjFromTID(tid, nullptr, nullptr) == nullptr)
          return tid;
    }
 
@@ -4305,7 +4350,7 @@ static cell sm_thingteleport(AMX *amx, cell *params)
    fixed_t oldy;
    fixed_t oldz;
 
-   Mobj *mo = NULL;
+   Mobj *mo = nullptr;
    SmallContext_t *context = SM_GetContextForAMX(amx);
 
    if(gamestate != GS_LEVEL)
@@ -4366,7 +4411,7 @@ AMX_NATIVE_INFO mobj_Natives[] =
    { "_ThingGetPos",       sm_thinggetpos },
    { "_GetFreeTID",        sm_getfreetid },
    { "_ThingTeleport",     sm_thingteleport },
-   { NULL,                 NULL }
+   { nullptr,              nullptr }
 };
 #endif
 

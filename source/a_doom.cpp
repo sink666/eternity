@@ -58,6 +58,7 @@
 #include "r_state.h"
 #include "s_sound.h"
 #include "sounds.h"
+#include "v_misc.h"
 
 //
 // A_PosAttack
@@ -798,7 +799,7 @@ void A_VileTarget(actionargs_t *actionargs)
    fogaction.actiontype = actionargs_t::MOBJFRAME;
    fogaction.actor      = fog;
    fogaction.args       = ESAFEARGS(fog);
-   fogaction.pspr       = NULL;
+   fogaction.pspr       = nullptr;
    
    A_Fire(&fogaction);
 }
@@ -986,7 +987,7 @@ void A_SkullAttack(actionargs_t *actionargs)
    S_StartSound(actor, actor->info->attacksound);
 
    // haleyjd 08/07/04: use new P_SkullFly function
-   P_SkullFly(actor, SKULLSPEED);
+   P_SkullFly(actor, SKULLSPEED, false);
 }
 
 //
@@ -1045,7 +1046,7 @@ static void A_painShootSkull(Mobj *actor, const angle_t angle, int thingType,
    // and wouldn't spit another one if there were. If not in   // phares
    // compatibility mode, we remove the limit.                 // phares
 
-   if((comp[comp_pain] && count < 0) || count > 0)  // killough 10/98: compatibility-optioned
+   if((getComp(comp_pain) && count < 0) || count > 0)  // killough 10/98: compatibility-optioned
    {
       // count total number of skulls currently on the level
       if(count < 0)
@@ -1077,12 +1078,12 @@ static void A_painShootSkull(Mobj *actor, const angle_t angle, int thingType,
    // lation. Needed for Check_Sides
    v2fixed_t relpos = { actor->x + FixedMul(prestep, finecosine[an]),
                         actor->y + FixedMul(prestep, finesine[an]) };
-   v2fixed_t pos = P_LinePortalCrossing(*actor, relpos - *actor);
+   v2fixed_t pos = P_LinePortalCrossing(*actor, relpos - v2fixed_t{ actor->x, actor->y });
    x = pos.x;
    y = pos.y;
    z = actor->z + 8*FRACUNIT;
    
-   if(comp[comp_skull])   // killough 10/98: compatibility-optioned
+   if(getComp(comp_skull))   // killough 10/98: compatibility-optioned
       newmobj = P_SpawnMobj(x, y, z, thingType);                    // phares
    else                                                             //   V
    {
@@ -1105,15 +1106,15 @@ static void A_painShootSkull(Mobj *actor, const angle_t angle, int thingType,
 
       // ioanch 20160107: check against the floor or ceiling sector behind any
       // portals
-      const sector_t *ceilingsector = P_ExtremeSectorAtPoint(newmobj, true);
-      const sector_t *floorsector = P_ExtremeSectorAtPoint(newmobj, false);
+      const sector_t *ceilingsector = P_ExtremeSectorAtPoint(newmobj, surf_ceil);
+      const sector_t *floorsector = P_ExtremeSectorAtPoint(newmobj, surf_floor);
       // ioanch: removed redundant parentheses (of which the compiler doesn't 
       // cry)
-      if(newmobj->z > ceilingsector->ceilingheight - newmobj->height ||
-         newmobj->z < floorsector->floorheight)
+      if(newmobj->z > ceilingsector->srf.ceiling.height - newmobj->height ||
+         newmobj->z < floorsector->srf.floor.height)
       {
          // kill it immediately
-         P_DamageMobj(newmobj,actor,actor,10000,MOD_UNKNOWN);
+         P_DamageMobj(newmobj,actor,actor,GOD_BREACH_DAMAGE,MOD_UNKNOWN);
          return;                                                    //   ^
       }                                                             //   |
    }                                                                // phares
@@ -1130,7 +1131,7 @@ static void A_painShootSkull(Mobj *actor, const angle_t angle, int thingType,
    if(!P_TryMove(newmobj, newmobj->x, newmobj->y, false))
    {
       // kill it immediately
-      P_DamageMobj(newmobj, actor, actor, 10000, MOD_UNKNOWN);
+      P_DamageMobj(newmobj, actor, actor, GOD_BREACH_DAMAGE, MOD_UNKNOWN);
       return;
    }
    
@@ -1210,11 +1211,11 @@ void A_PainDie(actionargs_t *actionargs)
 // Special Death Effects
 //
 
-typedef struct boss_spec_s
+struct boss_spec_t
 {
    unsigned int thing_flag;
    unsigned int level_flag;
-} boss_spec_t;
+};
 
 #define NUM_BOSS_SPECS 7
 
@@ -1375,7 +1376,7 @@ void P_SpawnBrainTargets()  // killough 3/26/98: renamed old function
 //
 void A_BrainAwake(actionargs_t *actionargs)
 {
-   S_StartSound(NULL, sfx_bossit); // killough 3/26/98: only generates sound now
+   S_StartSound(nullptr, sfx_bossit); // killough 3/26/98: only generates sound now
 }
 
 //
@@ -1385,7 +1386,7 @@ void A_BrainAwake(actionargs_t *actionargs)
 //
 void A_BrainPain(actionargs_t *actionargs)
 {
-   S_StartSound(NULL, sfx_bospn);
+   S_StartSound(nullptr, sfx_bospn);
 }
 
 //
@@ -1413,7 +1414,7 @@ void A_BrainScream(actionargs_t *actionargs)
       if(th->tics < 1)
          th->tics = 1;
    }
-   S_StartSound(NULL, sfx_bosdth);
+   S_StartSound(nullptr, sfx_bosdth);
 }
 
 //
@@ -1477,6 +1478,12 @@ void A_BrainSpit(actionargs_t *actionargs)
    // spawn brain missile
    newmobj = P_SpawnMissile(mo, targ, SpawnShotType, mo->z + DEFAULTMISSILEZ);
    P_SetTarget<Mobj>(&newmobj->target, targ);
+   if(!newmobj->state->tics)
+   {
+      newmobj->remove();
+      doom_printf(FC_ERROR "BrainSpit: invalid 0 tic spawn state");
+      return;
+   }
    newmobj->reactiontime = (int16_t)(((targ->y-mo->y)/newmobj->momy)/newmobj->state->tics);
 
    // killough 7/18/98: brain friendliness is transferred
@@ -1485,7 +1492,7 @@ void A_BrainSpit(actionargs_t *actionargs)
    // killough 8/29/98: add to appropriate thread
    newmobj->updateThinker();
    
-   S_StartSound(NULL, sfx_bospit);
+   S_StartSound(nullptr, sfx_bospit);
 }
 
 void A_SpawnFly(actionargs_t *actionargs);

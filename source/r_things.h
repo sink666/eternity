@@ -71,7 +71,7 @@ void R_SetMaskedSilhouette(const float *top, const float *bottom);
 struct texture_t;
 struct texcol_t;
 
-void R_DrawNewMaskedColumn(texture_t *tex, texcol_t *tcolumn);
+void R_DrawNewMaskedColumn(const texture_t *tex, const texcol_t *tcolumn);
 void R_AddSprites(sector_t *sec, int); // killough 9/18/98
 void R_InitSprites(char **namelist);
 void R_ClearSprites(void);
@@ -80,11 +80,11 @@ void R_ClearParticles(void);
 void R_InitParticles(void);
 particle_t *newParticle(void);
 
-typedef struct cb_maskedcolumn_s
+struct cb_maskedcolumn_t
 {
    float ytop;
    float scale;
-} cb_maskedcolumn_t;
+};
 
 extern cb_maskedcolumn_t maskedcolumn;
 

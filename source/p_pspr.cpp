@@ -109,14 +109,24 @@ void P_SetPspritePtr(const player_t *player, pspdef_t *psp, statenum_t stnum)
             // coordinate set
             psp->sx = state->misc1 << FRACBITS;
             psp->sy = state->misc2 << FRACBITS;
+            if(!(state->flags & STATEF_INTERPOLATE))
+               psp->backupPosition();
          }
       }
       else
       {
          if(state->misc1)
+         {
             psp->sx = state->misc1 << FRACBITS;
+            if(!(state->flags & STATEF_INTERPOLATE))
+               psp->prevpos.x = psp->sx;
+         }
          if(state->misc2)
+         {
             psp->sy = state->misc2 << FRACBITS;
+            if(!(state->flags & STATEF_INTERPOLATE))
+               psp->prevpos.y = psp->sy;
+         }
       }
 
       // Call action routine.
@@ -800,19 +810,15 @@ void A_WeaponReady(actionargs_t *actionargs)
    }
 
    // get out of attack state
-   if(mo->state == states[mo->info->missilestate] || 
-      mo->state == states[player->pclass->altattack])
-   {
+   if(mo->state == states[mo->info->missilestate] || mo->state == states[player->pclass->altattack])
       P_SetMobjState(mo, mo->info->spawnstate);
-   }
-
 
    // Play sound if the readyweapon has a sound to play and the current
    // state is the ready state, and do it only 50% of the time if the
    // according flag is set.
    if(player->readyweapon->readysound &&
       psp->state->index == player->readyweapon->readystate &&
-      (!(player->readyweapon->flags & WPF_READYSNDHALF) || M_Random() < 128))
+      (!(player->readyweapon->flags & WPF_READYSNDHALF) || M_VHereticPRandom(pr_wpnreadysnd) < 128))
       S_StartSoundName(player->mo, player->readyweapon->readysound);
 
    // WEAPON_FIXME: chainsaw particulars (haptic feedback)
@@ -1231,6 +1237,8 @@ void P_MovePsprites(player_t *player)
    
    player->psprites[ps_flash].sx = player->psprites[ps_weapon].sx;
    player->psprites[ps_flash].sy = player->psprites[ps_weapon].sy;
+   // also preserve interpolation
+   player->psprites[ps_flash].prevpos = player->psprites[ps_weapon].prevpos;
 }
 
 //===============================
@@ -1290,7 +1298,7 @@ void A_FireCustomBullets(actionargs_t *actionargs)
    arglist_t *args = actionargs->args;
    int i, numbullets, damage, dmgmod;
    int flashint, flashstate;
-   int horizontal, vertical;
+   angle_t horizontal, vertical;
    sfxinfo_t *sfx;
    player_t *player;
    pspdef_t *psp;
@@ -1311,8 +1319,8 @@ void A_FireCustomBullets(actionargs_t *actionargs)
    flashint   = E_ArgAsInt(args, 5, 0);
    flashstate = E_ArgAsStateNum(args, 5, player);
 
-   horizontal = E_ArgAsInt(args, 6, 0);
-   vertical   = E_ArgAsInt(args, 7, 0);
+   horizontal = E_ArgAsAngle(args, 6, 0);
+   vertical   = E_ArgAsAngle(args, 7, 0);
 
    const char *pufftype = E_ArgAsString(args, 8, nullptr);
 
@@ -1350,9 +1358,11 @@ void A_FireCustomBullets(actionargs_t *actionargs)
       
       if(accurate == CBA_CUSTOM)
       {
-         angle += P_SubRandomEx(pr_custommisfire, ANGLE_1) / 2 * horizontal;
-         const angle_t pitch = (P_SubRandomEx(pr_custommisfire, ANGLE_1) / 2) *
-                                vertical;
+         constexpr unsigned int ANG_VALS = ANGLE_1;
+         angle += (static_cast<int64_t>(P_SubRandomEx(pr_custommisfire, ANG_VALS)) * horizontal) /
+                  (ANG_VALS * 2);
+         const angle_t pitch = static_cast<angle_t>((static_cast<int64_t>(P_SubRandomEx(pr_custommisfire, ANG_VALS)) * vertical) /
+                                                    (ANG_VALS * 2));
          // convert pitch to the same "unit" as slope, then add it on
          slope += finetangent[(ANG90 - pitch) >> ANGLETOFINESHIFT];
 
@@ -1392,7 +1402,7 @@ static dehflags_t fireplayermissile_flaglist[] =
    { "normal",    0x00000000               }, // [XA] explicit no-op. :P
    { "homing",    FIREPLAYERMISSILE_HOMING },
    { "noammo",    FIREPLAYERMISSILE_NOAMMO },
-   { NULL,        0 }
+   { nullptr,     0 }
 };
 
 static dehflagset_t fireplayermissile_flagset =
@@ -1611,7 +1621,7 @@ void A_PlayerThunk(actionargs_t *actionargs)
    bool settarget;
    bool useammo;
    int cptrnum, statenum;
-   state_t *oldstate = 0;
+   state_t *oldstate = nullptr;
    Mobj *oldtarget = nullptr, *localtarget = nullptr;
    Mobj *mo = actionargs->actor;
    player_t  *player;

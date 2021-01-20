@@ -277,16 +277,16 @@ CONSOLE_COMMAND(mn_newgame, 0)
 
 void MN_QuitDoom()
 {
-   int quitmsgnum = M_Random() % 14;
+   int quitmsgnum;
    char quitmsg[128];
-   char quitmsg_ind[9];
+   char quitmsg_id[9];
    const char *source;
    const char *comp_str = DEH_String("QUITMSG");
 
-   snprintf(quitmsg_ind, sizeof(quitmsg_ind), "QUITMSG%i", quitmsgnum + 1);
-   const char *str = DEH_String(quitmsg_ind);
+   quitmsgnum = M_Random() % 15;
 
-   // quitmsgnum = M_Random() % 14;
+   snprintf(quitmsg_id, sizeof(quitmsg_id), "QUITMSG%i", quitmsgnum);
+   const char *str = DEH_String(quitmsg_id);
 
    // sf: use QUITMSG if it has been replaced in a dehacked file
 

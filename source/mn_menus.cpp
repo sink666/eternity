@@ -277,16 +277,22 @@ CONSOLE_COMMAND(mn_newgame, 0)
 
 void MN_QuitDoom()
 {
-   int quitmsgnum;
+   int quitmsgnum = M_Random() % 14;
    char quitmsg[128];
+   char quitmsg_ind[9];
    const char *source;
-   const char *str = DEH_String("QUITMSG");
+   const char *comp_str = DEH_String("QUITMSG");
 
-   quitmsgnum = M_Random() % 14;
+   snprintf(quitmsg_ind, sizeof(quitmsg_ind), "QUITMSG%i", quitmsgnum + 1);
+   const char *str = DEH_String(quitmsg_ind);
+
+   // quitmsgnum = M_Random() % 14;
 
    // sf: use QUITMSG if it has been replaced in a dehacked file
 
-   if(strcmp(str, "")) // support dehacked replacement
+   if(strcmp(comp_str, "")) // support old dehacked replacement behavior
+      source = comp_str;
+   else if(strcmp(str, "")) //new behavior check
       source = str;
    else if(GameModeInfo->type == Game_Heretic) // haleyjd: heretic support
       source = HTICQUITMSG;

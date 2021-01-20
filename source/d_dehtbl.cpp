@@ -61,7 +61,14 @@ static const char *s_D_DEVSTR    = D_DEVSTR;
 static const char *s_D_CDROM     = D_CDROM;
 static const char *s_PRESSKEY    = PRESSKEY;
 static const char *s_PRESSYN     = PRESSYN;
-static const char *s_QUITMSG     = "";        // sf: optional quitmsg replacement
+static const char *s_QUITMSG     = "", // sf: optional quitmsg replacement
+    *s_QUITMSG1    = "", *s_QUITMSG2    = "",
+    *s_QUITMSG3    = "", *s_QUITMSG4    = "",
+    *s_QUITMSG5    = "", *s_QUITMSG6    = "",
+    *s_QUITMSG7    = "", *s_QUITMSG8    = "",
+    *s_QUITMSG9    = "", *s_QUITMSG10   = "",
+    *s_QUITMSG11   = "", *s_QUITMSG12   = "",
+    *s_QUITMSG13   = "", *s_QUITMSG14   = "";
 static const char *s_LOADNET     = LOADNET;   // PRESSKEY; // killough 4/4/98:
 static const char *s_QLOADNET    = QLOADNET;  // PRESSKEY;
 static const char *s_QSAVESPOT   = QSAVESPOT; // PRESSKEY;
